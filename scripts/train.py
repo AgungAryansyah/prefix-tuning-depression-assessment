@@ -54,12 +54,14 @@ def run_training(
         batch_size=training_config.batch_size,
         shuffle=True,
         collate_fn=collator,
+        num_workers=training_config.num_workers,
     )
     dev_loader = DataLoader(
         dev_dataset,
         batch_size=training_config.batch_size,
         shuffle=False,
         collate_fn=collator,
+        num_workers=training_config.num_workers,
     )
 
     model = build_depression_model(model_config, model_type)
@@ -116,6 +118,7 @@ def main() -> None:
     parser.add_argument("--num-epochs", type=int, default=TrainingConfig().num_epochs)
     parser.add_argument("--es-patience", type=int, default=TrainingConfig().es_patience)
     parser.add_argument("--batch-size", type=int, default=TrainingConfig().batch_size)
+    parser.add_argument("--num-workers", type=int, default=TrainingConfig().num_workers)
     args = parser.parse_args()
 
     device = torch.device(args.device)
@@ -124,6 +127,7 @@ def main() -> None:
         num_epochs=args.num_epochs,
         es_patience=args.es_patience,
         batch_size=args.batch_size,
+        num_workers=args.num_workers,
     )
 
     results: list[dict[str, float]] = []

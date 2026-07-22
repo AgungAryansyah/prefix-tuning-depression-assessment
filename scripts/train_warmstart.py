@@ -46,6 +46,7 @@ def main() -> None:
     parser.add_argument("--num-epochs", type=int, default=TrainingConfig().num_epochs)
     parser.add_argument("--es-patience", type=int, default=TrainingConfig().es_patience)
     parser.add_argument("--batch-size", type=int, default=TrainingConfig().batch_size)
+    parser.add_argument("--num-workers", type=int, default=TrainingConfig().num_workers)
     args = parser.parse_args()
 
     device = torch.device(args.device)
@@ -54,6 +55,7 @@ def main() -> None:
         num_epochs=args.num_epochs,
         es_patience=args.es_patience,
         batch_size=args.batch_size,
+        num_workers=args.num_workers,
     )
 
     results: list[dict[str, float]] = []
@@ -73,12 +75,14 @@ def main() -> None:
             batch_size=training_config.batch_size,
             shuffle=True,
             collate_fn=prefix_collator,
+            num_workers=training_config.num_workers,
         )
         prefix_dev_loader = DataLoader(
             dev_dataset,
             batch_size=training_config.batch_size,
             shuffle=False,
             collate_fn=prefix_collator,
+            num_workers=training_config.num_workers,
         )
 
         dual_collator = build_collator(model_config, "dual-encoder")
@@ -87,12 +91,14 @@ def main() -> None:
             batch_size=training_config.batch_size,
             shuffle=True,
             collate_fn=dual_collator,
+            num_workers=training_config.num_workers,
         )
         dual_dev_loader = DataLoader(
             dev_dataset,
             batch_size=training_config.batch_size,
             shuffle=False,
             collate_fn=dual_collator,
+            num_workers=training_config.num_workers,
         )
 
         # Step 1: train prefix-only model.

@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from prefix_tuning_depression.config import TrainingConfig
+
 MODELS = [
     "bert-pt",
     "roberta-pt",
@@ -20,7 +22,7 @@ MODELS = [
 ]
 
 
-def run_model(model: str, seeds: list[int], output_dir: Path, device: str) -> dict:
+def run_model(model: str, seeds: list[int], output_dir: Path, device: str, num_workers: int) -> dict:
     """Train one model across seeds and load aggregated results."""
     print(f"\n=== Running {model} ===")
     cmd = [
@@ -32,6 +34,8 @@ def run_model(model: str, seeds: list[int], output_dir: Path, device: str) -> di
         str(output_dir),
         "--device",
         device,
+        "--num-workers",
+        str(num_workers),
         "--seeds",
     ] + [str(s) for s in seeds]
 
@@ -68,11 +72,12 @@ def main() -> None:
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     parser.add_argument("--device", type=str, default="cuda" if __import__("torch").cuda.is_available() else "cpu")
     parser.add_argument("--models", type=str, nargs="+", default=MODELS, choices=MODELS)
+    parser.add_argument("--num-workers", type=int, default=TrainingConfig().num_workers)
     args = parser.parse_args()
 
     all_results: dict[str, dict] = {}
     for model in args.models:
-        all_results[model] = run_model(model, args.seeds, args.output_dir, args.device)
+        all_results[model] = run_model(model, args.seeds, args.output_dir, args.device, args.num_workers)
 
     print("\n=== Aggregated dev results ===")
     print(f"{'Model':<16} {'RMSE':>12} {'MAE':>12}")

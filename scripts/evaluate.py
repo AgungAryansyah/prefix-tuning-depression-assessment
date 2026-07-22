@@ -8,7 +8,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-from prefix_tuning_depression.config import ModelConfig
+from prefix_tuning_depression.config import ModelConfig, TrainingConfig
 from prefix_tuning_depression.data import load_interviews
 from prefix_tuning_depression.dataset import InterviewDataset, build_collator
 from prefix_tuning_depression.models.depression_model import build_depression_model
@@ -22,6 +22,7 @@ def main() -> None:
     parser.add_argument("--data-root", type=Path, default=Path("data"))
     parser.add_argument("--split", type=str, default="dev", choices=["dev", "test"])
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--num-workers", type=int, default=TrainingConfig().num_workers)
     args = parser.parse_args()
 
     device = torch.device(args.device)
@@ -35,6 +36,7 @@ def main() -> None:
         batch_size=2,
         shuffle=False,
         collate_fn=collator,
+        num_workers=args.num_workers,
     )
 
     model = build_depression_model(model_config, args.model).to(device)
