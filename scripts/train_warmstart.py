@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader
 
 from prefix_tuning_depression.config import ModelConfig, TrainingConfig
 from prefix_tuning_depression.data import load_interviews
-from prefix_tuning_depression.dataset import InterviewDataset, InterviewCollator
+from prefix_tuning_depression.dataset import InterviewDataset, build_collator
 from prefix_tuning_depression.metrics import aggregate_run_results
 from prefix_tuning_depression.models.depression_model import (
     build_depression_model,
@@ -64,18 +64,35 @@ def main() -> None:
         train_interviews = load_interviews(args.data_root, split="train")
         dev_interviews = load_interviews(args.data_root, split="dev")
 
-        collator = InterviewCollator(model_config)
-        train_loader = DataLoader(
-            InterviewDataset(train_interviews),
+        train_dataset = InterviewDataset(train_interviews)
+        dev_dataset = InterviewDataset(dev_interviews)
+
+        prefix_collator = build_collator(model_config, "prefix-only")
+        prefix_train_loader = DataLoader(
+            train_dataset,
             batch_size=training_config.batch_size,
             shuffle=True,
-            collate_fn=collator,
+            collate_fn=prefix_collator,
         )
-        dev_loader = DataLoader(
-            InterviewDataset(dev_interviews),
+        prefix_dev_loader = DataLoader(
+            dev_dataset,
             batch_size=training_config.batch_size,
             shuffle=False,
-            collate_fn=collator,
+            collate_fn=prefix_collator,
+        )
+
+        dual_collator = build_collator(model_config, "dual-encoder")
+        dual_train_loader = DataLoader(
+            train_dataset,
+            batch_size=training_config.batch_size,
+            shuffle=True,
+            collate_fn=dual_collator,
+        )
+        dual_dev_loader = DataLoader(
+            dev_dataset,
+            batch_size=training_config.batch_size,
+            shuffle=False,
+            collate_fn=dual_collator,
         )
 
         # Step 1: train prefix-only model.
@@ -83,8 +100,8 @@ def main() -> None:
         prefix_model = build_depression_model(model_config, "prefix-only").to(device)
         prefix_model, _ = train_model(
             model=prefix_model,
-            train_loader=train_loader,
-            dev_loader=dev_loader,
+            train_loader=prefix_train_loader,
+            dev_loader=prefix_dev_loader,
             model_type="prefix-only",
             num_epochs=training_config.num_epochs,
             patience=training_config.es_patience,
@@ -103,8 +120,8 @@ def main() -> None:
         )
         dual_model, _ = train_model(
             model=dual_model,
-            train_loader=train_loader,
-            dev_loader=dev_loader,
+            train_loader=dual_train_loader,
+            dev_loader=dual_dev_loader,
             model_type="dual-encoder",
             num_epochs=training_config.num_epochs,
             patience=training_config.es_patience,
@@ -116,7 +133,7 @@ def main() -> None:
         torch.save(dual_model.state_dict(), dual_checkpoint)
 
         criterion = torch.nn.MSELoss()
-        dev_results = evaluate(dual_model, dev_loader, criterion, device, "dual-encoder")
+        dev_results = evaluate(dual_model, dual_dev_loader, criterion, device, "dual-encoder")
         print(
             f"Seed {seed}: RMSE={dev_results['rmse']:.3f}, MAE={dev_results['mae']:.3f}"
         )
