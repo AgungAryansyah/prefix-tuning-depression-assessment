@@ -280,6 +280,37 @@ def build_depression_model(config: ModelConfig, model_type: str) -> BaseDepressi
         case "dual-encoder":
             return DualEncoderModel(config)
         case "bert-pt" | "bert-ft1" | "bert-ft2" | "roberta-pt" | "roberta-ft1" | "roberta-ft2":
-            return BaselineModel(config, model_type)
+            return BaselineModel(config, encoder_type=model_type)
         case _:
             raise ValueError(f"Unknown model type: {model_type}")
+
+
+def build_warmstarted_dual_encoder(
+    config: ModelConfig,
+    prefix_checkpoint_path: str,
+    device: torch.device | str,
+) -> DualEncoderModel:
+    """Create a dual encoder initialized from a trained prefix-only model.
+
+    The prefix encoder, prefix projection, and interview-level layers are
+    copied from the prefix checkpoint and the prefix encoder is frozen.
+    """
+    prefix_model = PrefixModel(config).to(device)
+    prefix_model.load_state_dict(
+        torch.load(prefix_checkpoint_path, map_location=device, weights_only=True)
+    )
+
+    dual_model = DualEncoderModel(config).to(device)
+    dual_model.prefix_encoder.load_state_dict(prefix_model.prefix_encoder.state_dict())
+    dual_model.prefix_projection.load_state_dict(
+        prefix_model.prefix_projection.state_dict()
+    )
+    dual_model.interview_encoder.load_state_dict(
+        prefix_model.interview_encoder.state_dict()
+    )
+
+    for param in dual_model.prefix_encoder.parameters():
+        param.requires_grad = False
+    dual_model.freeze_prefix = True
+
+    return dual_model
