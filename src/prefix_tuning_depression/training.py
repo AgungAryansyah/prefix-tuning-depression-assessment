@@ -52,7 +52,7 @@ def train_epoch(
 
         optimizer.zero_grad()
         logits = _forward_batch(model, batch, interview_lengths, model_type, device)
-        loss = criterion(logits.squeeze(), labels)
+        loss = criterion(logits.view(-1), labels)
         loss.backward()
         optimizer.step()
 
@@ -83,13 +83,13 @@ def evaluate(
         interview_lengths = batch["interview_lengths"].to(device)
 
         logits = _forward_batch(model, batch, interview_lengths, model_type, device)
-        loss = criterion(logits.squeeze(), labels)
+        loss = criterion(logits.view(-1), labels)
 
         batch_size = labels.size(0)
         total_loss += loss.item() * batch_size
         total_samples += batch_size
 
-        preds = logits.squeeze().detach().cpu().numpy()
+        preds = logits.view(-1).detach().cpu().numpy()
         labels_np = labels.detach().cpu().numpy()
 
         all_preds.append(np.atleast_1d(preds))

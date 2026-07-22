@@ -113,11 +113,18 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=Path("checkpoints"))
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--num-epochs", type=int, default=TrainingConfig().num_epochs)
+    parser.add_argument("--es-patience", type=int, default=TrainingConfig().es_patience)
+    parser.add_argument("--batch-size", type=int, default=TrainingConfig().batch_size)
     args = parser.parse_args()
 
     device = torch.device(args.device)
     model_config = ModelConfig()
-    training_config = TrainingConfig()
+    training_config = TrainingConfig().replace(
+        num_epochs=args.num_epochs,
+        es_patience=args.es_patience,
+        batch_size=args.batch_size,
+    )
 
     results: list[dict[str, float]] = []
     for seed in args.seeds:

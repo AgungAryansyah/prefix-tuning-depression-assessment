@@ -25,12 +25,16 @@ class TrainingConfig:
     """Training hyperparameters."""
 
     seed: int = 0
-    batch_size: int = 2
+    batch_size: int = 1
     learning_rate: float = 3e-4
     num_epochs: int = 200
     es_patience: int = 20
     optimizer: str = "AdamW"
     problem_type: str = "regression"
+
+    def replace(self, **kwargs) -> "TrainingConfig":
+        """Return a copy with updated fields."""
+        return type(self)(**(self.__dict__ | kwargs))
 
 
 @dataclass(frozen=True)
