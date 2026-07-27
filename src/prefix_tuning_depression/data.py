@@ -76,6 +76,9 @@ def load_interviews(
         phq_score, phq_binary = labels[subject_id]
         qr_pairs = preprocess_transcript(df, subject_id=subject_id)
 
+        if not qr_pairs:
+            continue
+
         interviews.append(
             Interview(
                 subject_id=subject_id,
