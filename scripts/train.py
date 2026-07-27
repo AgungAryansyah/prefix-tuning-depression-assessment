@@ -74,6 +74,7 @@ def run_training(
         patience=training_config.es_patience,
         learning_rate=training_config.learning_rate,
         device=device,
+        device_ids=args.device_ids,
         verbose=True,
     )
 
@@ -119,6 +120,8 @@ def main() -> None:
     parser.add_argument("--es-patience", type=int, default=TrainingConfig().es_patience)
     parser.add_argument("--batch-size", type=int, default=TrainingConfig().batch_size)
     parser.add_argument("--num-workers", type=int, default=TrainingConfig().num_workers)
+    parser.add_argument("--device-ids", type=int, nargs="+", default=None,
+                        help="GPU device IDs for DataParallel; single id means no parallelism")
     args = parser.parse_args()
 
     device = torch.device(args.device)

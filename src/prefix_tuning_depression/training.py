@@ -136,12 +136,23 @@ def train_model(
     patience: int = 20,
     learning_rate: float = 3e-4,
     device: torch.device | None = None,
+    device_ids: list[int] | None = None,
     verbose: bool = True,
 ) -> tuple[nn.Module, dict[str, list[float]]]:
-    """Train a model with early stopping and return the best model + history."""
+    """Train a model with early stopping and return the best model + history.
+
+    If ``device_ids`` contains more than one GPU id, the model is wrapped in
+    ``nn.DataParallel`` for the duration of training and unwrapped before it
+    is returned, so the saved state dicts are compatible with single-GPU
+    checkpoints.
+    """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
+
+    use_dp = device_ids is not None and len(device_ids) > 1
+    if use_dp:
+        model = nn.DataParallel(model, device_ids=device_ids)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
@@ -171,7 +182,8 @@ def train_model(
 
         improved = early_stopping.step(dev_results["loss"])
         if improved:
-            best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            source = model.module if use_dp else model
+            best_state = {k: v.cpu().clone() for k, v in source.state_dict().items()}
 
         if pbar is not None:
             pbar.update(1)
@@ -190,5 +202,8 @@ def train_model(
 
     if best_state is not None:
         model.load_state_dict(best_state)
+
+    if use_dp:
+        model = model.module
 
     return model, history

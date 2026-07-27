@@ -23,6 +23,8 @@ def main() -> None:
     parser.add_argument("--split", type=str, default="dev", choices=["dev", "test"])
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--num-workers", type=int, default=TrainingConfig().num_workers)
+    parser.add_argument("--device-ids", type=int, nargs="+", default=None,
+                        help="GPU device IDs for DataParallel; single id means no parallelism")
     args = parser.parse_args()
 
     device = torch.device(args.device)
@@ -41,6 +43,9 @@ def main() -> None:
 
     model = build_depression_model(model_config, args.model).to(device)
     model.load_state_dict(torch.load(args.checkpoint, map_location=device))
+
+    if args.device_ids is not None and len(args.device_ids) > 1:
+        model = torch.nn.DataParallel(model, device_ids=args.device_ids)
 
     criterion = torch.nn.MSELoss()
     results = evaluate(model, dataloader, criterion, device, args.model)
