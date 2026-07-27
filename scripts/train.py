@@ -38,6 +38,7 @@ def run_training(
     training_config: TrainingConfig,
     device: torch.device,
     seed: int,
+    device_ids: list[int] | None = None,
 ) -> dict[str, float]:
     """Train one run and return dev metrics."""
     set_seed(seed)
@@ -74,7 +75,7 @@ def run_training(
         patience=training_config.es_patience,
         learning_rate=training_config.learning_rate,
         device=device,
-        device_ids=args.device_ids,
+        device_ids=device_ids,
         verbose=True,
     )
 
@@ -144,6 +145,7 @@ def main() -> None:
             training_config=training_config,
             device=device,
             seed=seed,
+            device_ids=args.device_ids,
         )
         results.append(run_result)
 

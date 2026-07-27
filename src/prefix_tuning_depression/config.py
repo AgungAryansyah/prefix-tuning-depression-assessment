@@ -18,6 +18,7 @@ class ModelConfig:
     dropout_prob: float = 0.5
     num_labels: int = 1
     fusion_method: str = "avg"
+    chunk_size: int = 16
 
 
 @dataclass(frozen=True)

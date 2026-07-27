@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -31,6 +33,61 @@ class BaseDepressionModel(nn.Module):
             dropout=config.dropout_prob,
             num_labels=config.num_labels,
         )
+
+    def _encode_qr_embeddings(
+        self,
+        inputs: torch.Tensor,
+        interview_lengths: torch.Tensor,
+        encode_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+    ) -> torch.Tensor:
+        """Encode QR pairs in chunks to avoid OOM with long interviews.
+
+        Args:
+            inputs: Tensor of shape (batch, max_len, 2, max_token_len).
+            interview_lengths: Tensor of shape (batch,).
+            encode_fn: Function that takes (input_ids, attention_mask) and
+                returns embeddings of shape (num_qr, hidden_size).
+
+        Returns:
+            Tensor of shape (batch, max_len, hidden_size).
+        """
+        batch_size = inputs.shape[0]
+        max_len = int(interview_lengths.max())
+        device = inputs.device
+
+        # Determine the encoder's output dimension from a tiny probe.
+        embedding_size = self.config.encoding_projection_size
+        if batch_size > 0 and int(interview_lengths[0]) > 0:
+            probe = encode_fn(
+                inputs[0, :1, 0, :],
+                inputs[0, :1, 1, :],
+            )
+            embedding_size = probe.shape[-1]
+
+        outputs = torch.zeros(
+            batch_size,
+            max_len,
+            embedding_size,
+            device=device,
+        )
+
+        chunk_size = self.config.chunk_size
+        for sample_idx in range(batch_size):
+            length = int(interview_lengths[sample_idx])
+            input_ids = inputs[sample_idx, :length, 0, :]
+            attention_mask = inputs[sample_idx, :length, 1, :]
+
+            chunks: list[torch.Tensor] = []
+            for start in range(0, length, chunk_size):
+                end = min(start + chunk_size, length)
+                chunks.append(
+                    encode_fn(input_ids[start:end], attention_mask[start:end])
+                )
+
+            if chunks:
+                outputs[sample_idx, :length, :] = torch.cat(chunks, dim=0)
+
+        return outputs
 
     def _encode_qr_sequence(
         self,
@@ -71,28 +128,12 @@ class PrefixModel(BaseDepressionModel):
         Returns:
             Logits of shape (batch, num_labels).
         """
-        batch_size = prefix_inputs.shape[0]
-        max_len = int(interview_lengths.max())
-        device = prefix_inputs.device
-
-        encoder_outputs = torch.zeros(
-            batch_size,
-            max_len,
-            self.config.encoding_projection_size,
-            device=device,
+        encodings = self._encode_qr_embeddings(
+            prefix_inputs, interview_lengths, self.prefix_encoder
         )
-
-        for sample_idx in range(batch_size):
-            length = int(interview_lengths[sample_idx])
-            input_ids = prefix_inputs[sample_idx, :length, 0, :]
-            attention_mask = prefix_inputs[sample_idx, :length, 1, :]
-
-            encodings = self.prefix_encoder(input_ids, attention_mask)
-            encodings = self.dropout(encodings)
-            encodings = self.prefix_projection(encodings)
-            encoder_outputs[sample_idx, :length, :] = encodings
-
-        return self._encode_qr_sequence(encoder_outputs, interview_lengths)
+        encodings = self.dropout(encodings)
+        encodings = self.prefix_projection(encodings)
+        return self._encode_qr_sequence(encodings, interview_lengths)
 
 
 class STModel(BaseDepressionModel):
@@ -118,28 +159,12 @@ class STModel(BaseDepressionModel):
         Returns:
             Logits of shape (batch, num_labels).
         """
-        batch_size = st_inputs.shape[0]
-        max_len = int(interview_lengths.max())
-        device = st_inputs.device
-
-        encoder_outputs = torch.zeros(
-            batch_size,
-            max_len,
-            self.config.encoding_projection_size,
-            device=device,
+        encodings = self._encode_qr_embeddings(
+            st_inputs, interview_lengths, self.st_encoder
         )
-
-        for sample_idx in range(batch_size):
-            length = int(interview_lengths[sample_idx])
-            input_ids = st_inputs[sample_idx, :length, 0, :]
-            attention_mask = st_inputs[sample_idx, :length, 1, :]
-
-            encodings = self.st_encoder(input_ids, attention_mask)
-            encodings = self.dropout(encodings)
-            encodings = self.st_projection(encodings)
-            encoder_outputs[sample_idx, :length, :] = encodings
-
-        return self._encode_qr_sequence(encoder_outputs, interview_lengths)
+        encodings = self.dropout(encodings)
+        encodings = self.st_projection(encodings)
+        return self._encode_qr_sequence(encodings, interview_lengths)
 
 
 class BaselineModel(BaseDepressionModel):
@@ -165,28 +190,12 @@ class BaselineModel(BaseDepressionModel):
         Returns:
             Logits of shape (batch, num_labels).
         """
-        batch_size = inputs.shape[0]
-        max_len = int(interview_lengths.max())
-        device = inputs.device
-
-        encoder_outputs = torch.zeros(
-            batch_size,
-            max_len,
-            self.config.encoding_projection_size,
-            device=device,
+        encodings = self._encode_qr_embeddings(
+            inputs, interview_lengths, self.qr_encoder
         )
-
-        for sample_idx in range(batch_size):
-            length = int(interview_lengths[sample_idx])
-            input_ids = inputs[sample_idx, :length, 0, :]
-            attention_mask = inputs[sample_idx, :length, 1, :]
-
-            encodings = self.qr_encoder(input_ids, attention_mask)
-            encodings = self.dropout(encodings)
-            encodings = self.qr_projection(encodings)
-            encoder_outputs[sample_idx, :length, :] = encodings
-
-        return self._encode_qr_sequence(encoder_outputs, interview_lengths)
+        encodings = self.dropout(encodings)
+        encodings = self.qr_projection(encodings)
+        return self._encode_qr_sequence(encodings, interview_lengths)
 
 
 class DualEncoderModel(BaseDepressionModel):
@@ -230,43 +239,19 @@ class DualEncoderModel(BaseDepressionModel):
         Returns:
             Logits of shape (batch, num_labels).
         """
-        batch_size = st_inputs.shape[0]
-        max_len = int(interview_lengths.max())
-        device = st_inputs.device
-
-        st_outputs = torch.zeros(
-            batch_size,
-            max_len,
-            self.config.encoding_projection_size,
-            device=device,
+        st_encodings = self._encode_qr_embeddings(
+            st_inputs, interview_lengths, self.st_encoder
         )
-        prefix_outputs = torch.zeros(
-            batch_size,
-            max_len,
-            self.config.encoding_projection_size,
-            device=device,
+        st_encodings = self.dropout(st_encodings)
+        st_encodings = self.st_projection(st_encodings)
+
+        prefix_encodings = self._encode_qr_embeddings(
+            prefix_inputs, interview_lengths, self.prefix_encoder
         )
+        prefix_encodings = self.dropout(prefix_encodings)
+        prefix_encodings = self.prefix_projection(prefix_encodings)
 
-        for sample_idx in range(batch_size):
-            length = int(interview_lengths[sample_idx])
-
-            # Sentence Transformer branch.
-            input_ids = st_inputs[sample_idx, :length, 0, :]
-            attention_mask = st_inputs[sample_idx, :length, 1, :]
-            st_encodings = self.st_encoder(input_ids, attention_mask)
-            st_encodings = self.dropout(st_encodings)
-            st_encodings = self.st_projection(st_encodings)
-            st_outputs[sample_idx, :length, :] = st_encodings
-
-            # Prefix branch.
-            input_ids = prefix_inputs[sample_idx, :length, 0, :]
-            attention_mask = prefix_inputs[sample_idx, :length, 1, :]
-            prefix_encodings = self.prefix_encoder(input_ids, attention_mask)
-            prefix_encodings = self.dropout(prefix_encodings)
-            prefix_encodings = self.prefix_projection(prefix_encodings)
-            prefix_outputs[sample_idx, :length, :] = prefix_encodings
-
-        encoder_outputs = self.average_fusion(st_outputs, prefix_outputs)
+        encoder_outputs = self.average_fusion(st_encodings, prefix_encodings)
         return self._encode_qr_sequence(encoder_outputs, interview_lengths)
 
 
