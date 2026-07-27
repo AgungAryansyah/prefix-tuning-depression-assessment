@@ -41,11 +41,11 @@ def load_interviews(
     split: SplitName | None = None,
     split_map: dict[int, SplitName] | None = None,
 ) -> list[Interview]:
-    """Load interviews from cleaned transcript CSVs.
+    """Load interviews from official DAIC-WOZ transcript CSVs.
 
     Args:
-        data_root: Path to the data directory containing train/dev/test folders
-            and cleaning_report_Transcript.csv.
+        data_root: Path to the data directory containing the ``transcript/``
+            folder and ``cleaning_report_Transcript.csv``.
         split: If provided, only return interviews from this split.
         split_map: Optional pre-computed split mapping. If None, it is loaded
             from the cleaning report.
@@ -61,26 +61,20 @@ def load_interviews(
 
     labels = _load_labels(labels_path)
 
+    transcript_dir = data_root / "transcript"
+
     interviews: list[Interview] = []
     for subject_id, subject_split in split_map.items():
         if split is not None and subject_split != split:
             continue
 
-        csv_path = data_root / subject_split / f"{subject_id}_transcript_clean.csv"
-        if not csv_path.exists():
-            # Fallback: search all split directories (some sessions may have
-            # moved in custom splits).
-            for alt_split in ("train", "dev", "test"):
-                csv_path = data_root / alt_split / f"{subject_id}_transcript_clean.csv"
-                if csv_path.exists():
-                    break
-
+        csv_path = transcript_dir / f"{subject_id}_TRANSCRIPT.csv"
         if not csv_path.exists():
             continue
 
-        df = pd.read_csv(csv_path)
+        df = pd.read_csv(csv_path, sep="\t")
         phq_score, phq_binary = labels[subject_id]
-        qr_pairs = preprocess_transcript(df)
+        qr_pairs = preprocess_transcript(df, subject_id=subject_id)
 
         interviews.append(
             Interview(

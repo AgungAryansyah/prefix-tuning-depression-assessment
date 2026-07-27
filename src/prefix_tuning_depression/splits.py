@@ -1,8 +1,7 @@
 """DAIC-WOZ train/dev/test split handling.
 
 The paper uses the AVEC 2017 split (107/35/47) over the 189 DAIC-WOZ sessions.
-The cleaned transcripts available here cover 183 of those 189 sessions (six
-sessions with transcript issues were omitted by the upstream cleaner).
+Transcripts are read from ``data/transcript/``.
 
 This module first looks for an official AVEC 2017 split file, and falls back to
 a deterministic stratified split that preserves the original 57/19/25 ratio.
@@ -33,16 +32,15 @@ def _default_daicwoz_session_ids() -> list[int]:
 
 
 def _available_session_ids(data_root: Path) -> list[int]:
-    """Return session IDs that have cleaned transcript files on disk."""
+    """Return session IDs that have transcript files on disk."""
+    transcript_dir = data_root / "transcript"
+    if not transcript_dir.exists():
+        return []
     ids: set[int] = set()
-    for split in ("train", "dev", "test"):
-        split_dir = data_root / split
-        if not split_dir.exists():
-            continue
-        for path in split_dir.glob("*_transcript_clean.csv"):
-            sid = int(path.stem.split("_")[0])
-            if 300 <= sid <= 492:
-                ids.add(sid)
+    for path in transcript_dir.glob("*_TRANSCRIPT.csv"):
+        sid = int(path.stem.split("_")[0])
+        if 300 <= sid <= 492:
+            ids.add(sid)
     return sorted(ids)
 
 
