@@ -55,10 +55,10 @@ class RobertaPrefixEncoder(nn.Module):
             self.pre_seq_len, self.n_layer, config.hidden_size
         )
 
-    def get_prompt(self, batch_size: int) -> DynamicCache:
+    def get_prompt(self, batch_size: int, device: torch.device) -> DynamicCache:
         """Build a ``DynamicCache`` from the trainable prefix embeddings."""
         prefix_tokens = (
-            self.prefix_tokens.unsqueeze(0).expand(batch_size, -1).to(self.roberta.device)
+            self.prefix_tokens.unsqueeze(0).expand(batch_size, -1).to(device)
         )
         past_key_values = self.prefix_encoder(prefix_tokens)
         past_key_values = past_key_values.view(
@@ -83,12 +83,11 @@ class RobertaPrefixEncoder(nn.Module):
     ) -> torch.Tensor:
         """Return the mean-pooled last-layer representation for each input."""
         batch_size = input_ids.shape[0]
-        past_key_values = self.get_prompt(batch_size)
+        device = input_ids.device
+        past_key_values = self.get_prompt(batch_size, device)
 
         if attention_mask is not None:
-            prefix_attention_mask = torch.ones(batch_size, self.pre_seq_len).to(
-                self.roberta.device
-            )
+            prefix_attention_mask = torch.ones(batch_size, self.pre_seq_len).to(device)
             attention_mask = torch.cat((prefix_attention_mask, attention_mask), dim=1)
 
         outputs = self.roberta(
