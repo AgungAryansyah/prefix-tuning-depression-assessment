@@ -1,8 +1,8 @@
-"""Transcript preprocessing and QR pair grouping.
+"""DAIC-WOZ transcript preprocessing — exact reproduction of Lau et al. (2023).
 
-The cleaned transcripts available here do not contain a speaker column, so we use
-a heuristic to reconstruct Ellie / Participant turns and group them into
-question-response pairs as described in Lau et al. (2023).
+Processes raw official DAIC-WOZ transcripts (tab-separated:
+``start_time | stop_time | speaker | value``) into question-response
+pair strings ready for encoding.
 """
 
 from __future__ import annotations
@@ -11,166 +11,194 @@ import re
 
 import pandas as pd
 
-# Regex for start-of-interview and end-of-interview prompts to remove.
-_START_PROMPTS_RE = re.compile(
+# ---------------------------------------------------------------------------
+# Hard-coded corrections from the paper repo
+# ---------------------------------------------------------------------------
+
+_interrupt: dict[int, list[float]] = {
+    373: [398.0, 430.3],
+    444: [285.6, 384.4],
+}
+
+_misaligned: dict[int, float] = {
+    318: 34.319917,
+    321: 3.8379167,
+    341: 6.1892,
+    362: 16.8582,
+}
+
+_START_PROMPTS = re.compile(
     r"are you okay with this|"
     r"hi i'm ellie thanks for coming in today|"
     r"think of me as a friend i don't judge|"
     r"and please feel free to tell me anything|"
     r"i'm not a therapist|"
     r"i'll ask a few questions|"
-    r"i was created to talk"
+    r"i was created to talk",
 )
-_CLOSING_PROMPTS_RE = re.compile(
+_CLOSING_PROMPTS = re.compile(
     r"okay i think i have asked everything i need to|"
     r"okay i think i've asked everything i need to|"
     r"goodbye|"
     r"it was great chatting with you|"
-    r"thanks for sharing your thoughts"
-)
-
-# Heuristic cues used to label utterances without an explicit speaker column.
-_QUESTION_CUES = (
-    "what", "where", "how", "when", "why", "who", "which",
-    "do you", "are you", "did you", "have you", "has you", "can you",
-    "would you", "could you", "will you", "were you", "was you",
-)
-_PARTICIPANT_CUES = (
-    "i ", "i'm", "i've", "i'd", "i'll",
-    "my ", "me ", "myself", "we ", "we're", "our ",
+    r"thanks for sharing your thoughts",
 )
 
 
-def _is_question_like(text: str) -> bool:
-    """Return True if the utterance looks like an interviewer question."""
-    lowered = text.lower()
-    if lowered.endswith("?"):
-        return True
-    return any(cue in lowered for cue in _QUESTION_CUES)
-
-
-def _is_participant_like(text: str) -> bool:
-    """Return True if the utterance looks like a participant response."""
-    lowered = text.lower()
-    return any(cue in lowered for cue in _PARTICIPANT_CUES)
-
-
-def _label_speakers(utterances: list[str]) -> list[str]:
-    """Assign 'Ellie' or 'Participant' labels using alternating + keyword cues.
-
-    The first non-empty utterance is treated as Ellie. Consecutive utterances
-    that share the same predicted speaker are allowed; downstream collapse logic
-    merges consecutive Participant utterances.
-    """
-    labels: list[str] = []
-    last_speaker = "Participant"  # will flip to Ellie on first utterance
-
-    for text in utterances:
-        if not text.strip():
-            labels.append(last_speaker)
-            continue
-
-        if _is_question_like(text):
-            speaker = "Ellie"
-        elif _is_participant_like(text):
-            speaker = "Participant"
+def _consecutive_groups(indices: list[int]) -> list[list[int]]:
+    """Group consecutive integers.  Replaces ``more_itertools.consecutive_groups``."""
+    if not indices:
+        return []
+    groups: list[list[int]] = []
+    current = [indices[0]]
+    for i in indices[1:]:
+        if i == current[-1] + 1:
+            current.append(i)
         else:
-            speaker = "Ellie" if last_speaker == "Participant" else "Participant"
-
-        labels.append(speaker)
-        last_speaker = speaker
-
-    return labels
+            groups.append(current)
+            current = [i]
+    groups.append(current)
+    return groups
 
 
-def clean_text(text: str) -> str:
-    """Apply the paper's transcript cleaning rules.
+def _remove_unique_identifiers(df: pd.DataFrame) -> None:
+    """Strip speaker names from Ellie lines — keep only parenthesised content."""
+    mask = (df["speaker"] == "Ellie") & df["value"].str.contains("(", regex=False)
+    for idx in df[mask].index:
+        df.at[idx, "value"] = df.at[idx, "value"].split("(")[-1].rstrip(")")
 
-    - Standardize laughter / sigh annotations.
-    - Remove sync markers, scrubbed entries, unintelligible markers.
-    - Remove angle-bracket and square-bracket annotations.
-    - Lowercase and strip whitespace.
-    - Remove underscores used for acronyms.
+
+def _remove_whitespace(df: pd.DataFrame) -> None:
+    df["value"] = df["value"].str.strip()
+    df["value"] = df["value"].str.replace(r" +", " ", regex=True)
+
+
+def _remove_annotations(df: pd.DataFrame) -> None:
+    sync_expr = r"<sync>|<sync\.|<synch>|\[syncing\]|\[sync\]|\[synch\]|\[synching\]"
+    df.drop(
+        df[df["value"].str.contains(sync_expr, na=False)].index,
+        inplace=True,
+    )
+    df["value"] = df["value"].str.replace("<laughter>", "*laughter*", regex=False)
+    df["value"] = df["value"].str.replace(r"\[laughter\]", "*laughter*", regex=True)
+    df["value"] = df["value"].str.replace("<sigh>", "*sigh*", regex=False)
+    df["value"] = df["value"].str.replace(r"<.*?>", "", regex=True)
+    df["value"] = df["value"].str.replace(r"\[.*?\]", "", regex=True)
+    df["value"] = df["value"].str.replace("scrubbed_entry", "", regex=False)
+    df["value"] = df["value"].str.replace("xxxx", "", regex=False)
+    df["value"] = df["value"].str.replace("xxx", "", regex=False)
+
+
+def _remove_empty_rows(df: pd.DataFrame) -> None:
+    df.drop(df[df["value"] == ""].index, inplace=True)
+    df.drop(df[df["value"] == "laughter"].index, inplace=True)
+    df.drop(df[df["value"] == "*laughter*"].index, inplace=True)
+    df.reset_index(drop=True, inplace=True)
+
+
+def _collapse_responses(df: pd.DataFrame) -> None:
+    """Merge consecutive Participant lines with ``', '``.  Matches paper exactly."""
+    participant_indices = df[df["speaker"] == "Participant"].index.tolist()
+    groups = _consecutive_groups(participant_indices)
+    multi_line_groups = [g for g in groups if len(g) > 1]
+
+    for group in multi_line_groups:
+        first_idx = group[0]
+        last_idx = group[-1]
+        start_time = df.at[first_idx, "start_time"]
+        stop_time = df.at[last_idx, "stop_time"]
+        value = ", ".join(df.at[i, "value"] for i in group)
+        df.at[first_idx, "start_time"] = start_time
+        df.at[first_idx, "stop_time"] = stop_time
+        df.at[first_idx, "speaker"] = "Participant"
+        df.at[first_idx, "value"] = value
+        df.drop(group[1:], axis=0, inplace=True)
+
+
+def _to_qr_pairs(df: pd.DataFrame) -> list[str]:
+    """Pair each Participant response with the preceding Ellie question.
+
+    Returns a list of concatenated QR-pair strings.
     """
-    text = text.strip()
+    df = df.reset_index(drop=True)
 
-    # Standardize common non-verbal annotations first.
-    text = re.sub(r"\{?hlaughteri\}?|\[laughter\]|<laughter>", "*laughter*", text, flags=re.IGNORECASE)
-    text = re.sub(r"\{?hsighi\}?|<sigh>", "*sigh*", text, flags=re.IGNORECASE)
+    participant_idx = df[df["speaker"] == "Participant"].index.tolist()
+    if not participant_idx:
+        return []
 
-    # Remove specific markers.
-    text = re.sub(r"\[syncing\]|\[sync\]|\[synch\]|\[synching\]", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"<sync>|<sync\.|<synch>|<synching>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bscrubbed_entry\b|\bxxxx\b|\bxxx\b", "", text, flags=re.IGNORECASE)
+    ellie_idx = df[df["speaker"] == "Ellie"].index.tolist()
+    if not ellie_idx:
+        return []
 
-    # Remove remaining angle-bracket and square-bracket annotations.
-    text = re.sub(r"<.*?>", "", text)
-    text = re.sub(r"\[.*?\]", "", text)
+    # Drop Participant rows that appear before the first Ellie utterance.
+    first_ellie = ellie_idx[0]
+    participant_idx = [i for i in participant_idx if i > first_ellie]
 
-    # Remove underscores used for acronyms.
-    text = text.replace("_", "")
-
-    # Collapse whitespace.
-    text = re.sub(r"\s+", " ", text).strip()
-
-    return text.lower()
+    pairs: list[str] = []
+    for p_idx in participant_idx:
+        q_text = df.at[p_idx - 1, "value"]
+        r_text = df.at[p_idx, "value"]
+        pairs.append(f"{q_text} {r_text}")
+    return pairs
 
 
-def remove_prompts(utterances: list[str]) -> list[str]:
-    """Drop known start-of-interview and end-of-interview prompts."""
-    return [
-        u for u in utterances
-        if not _START_PROMPTS_RE.search(u.lower())
-        and not _CLOSING_PROMPTS_RE.search(u.lower())
-    ]
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
 
+def preprocess_transcript(
+    df: pd.DataFrame,
+    subject_id: int | None = None,
+) -> list[str]:
+    """Apply the paper's full preprocessing pipeline and return QR pair strings.
 
-def collapse_participant_turns(
-    utterances: list[str], speakers: list[str]
-) -> tuple[list[str], list[str]]:
-    """Merge consecutive Participant utterances into single turns.
+    Args:
+        df: Raw DAIC-WOZ transcript DataFrame with columns
+            ``start_time``, ``stop_time``, ``speaker``, ``value``.
+        subject_id: If provided, applies per-subject interruption and
+            misalignment corrections from the paper repo.
 
-    Returns the collapsed utterance list and corresponding speaker list.
+    Returns:
+        List of QR pair strings.
     """
-    collapsed_utterances: list[str] = []
-    collapsed_speakers: list[str] = []
+    df = df.copy()
 
-    for text, speaker in zip(utterances, speakers):
-        if speaker == "Participant" and collapsed_speakers and collapsed_speakers[-1] == "Participant":
-            collapsed_utterances[-1] = collapsed_utterances[-1] + " " + text
-        else:
-            collapsed_utterances.append(text)
-            collapsed_speakers.append(speaker)
+    # -- Per-subject corrections --------------------------------------------
+    if subject_id is not None:
+        if subject_id in _interrupt:
+            onset_time, end_time = _interrupt[subject_id]
+            mask_start = df["start_time"].astype(str).str.contains(str(onset_time))
+            mask_end = df["stop_time"].astype(str).str.contains(str(end_time))
+            if mask_start.any() and mask_end.any():
+                onset_idx = df[mask_start].index.values[0]
+                end_idx = df[mask_end].index.values[0]
+                df.drop(df.index[onset_idx:end_idx], inplace=True)
 
-    return collapsed_utterances, collapsed_speakers
+        if subject_id in _misaligned:
+            offset = _misaligned[subject_id]
+            df["start_time"] = df["start_time"] + offset
+            df["stop_time"] = df["stop_time"] + offset
 
+    # -- Paper repo cleaning pipeline (order preserved) ---------------------
+    df.dropna(inplace=True)
+    _remove_annotations(df)
+    _remove_whitespace(df)
+    _remove_unique_identifiers(df)
+    _remove_empty_rows(df)
+    _collapse_responses(df)
 
-def to_qr_pairs(utterances: list[str], speakers: list[str]) -> list[str]:
-    """Group consecutive Ellie -> Participant utterances into QR pairs.
+    # Drop start / closing prompts.
+    df.drop(
+        df[df["value"].str.contains(_START_PROMPTS, regex=True, na=False)].index,
+        inplace=True,
+    )
+    df.drop(
+        df[df["value"].str.contains(_CLOSING_PROMPTS, regex=True, na=False)].index,
+        inplace=True,
+    )
 
-    Each pair is returned as 'question response'.
-    """
-    qr_pairs: list[str] = []
-    last_ellie: str | None = None
+    # Remove underscores used for acronyms, then lowercase.
+    df["value"] = df["value"].str.replace("_", "", regex=False)
+    df["value"] = df["value"].str.lower()
 
-    for text, speaker in zip(utterances, speakers):
-        if speaker == "Ellie":
-            last_ellie = text
-        elif speaker == "Participant" and last_ellie is not None:
-            qr_pairs.append(f"{last_ellie} {text}")
-            last_ellie = None
-
-    return qr_pairs
-
-
-def preprocess_transcript(df: pd.DataFrame) -> list[str]:
-    """Convert a cleaned transcript DataFrame into a list of QR pair strings."""
-    utterances = [clean_text(str(t)) for t in df["Text"].tolist()]
-    utterances = [u for u in utterances if u.strip()]
-    utterances = remove_prompts(utterances)
-
-    speakers = _label_speakers(utterances)
-    utterances, speakers = collapse_participant_turns(utterances, speakers)
-    qr_pairs = to_qr_pairs(utterances, speakers)
-
-    return qr_pairs
+    return _to_qr_pairs(df)
