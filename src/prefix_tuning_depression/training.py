@@ -200,10 +200,10 @@ def train_model(
                 print(f"Early stopping at epoch {epoch + 1}")
             break
 
-    if best_state is not None:
-        model.load_state_dict(best_state)
-
     if use_dp:
         model = model.module
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
 
     return model, history
