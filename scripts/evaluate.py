@@ -12,6 +12,10 @@ from prefix_tuning_depression.config import ModelConfig, TrainingConfig
 from prefix_tuning_depression.data import load_interviews
 from prefix_tuning_depression.dataset import InterviewDataset, build_collator
 from prefix_tuning_depression.models.depression_model import build_depression_model
+from prefix_tuning_depression.splits import (
+    load_official_avec2017_contract,
+    require_complete_official_transcript_coverage,
+)
 from prefix_tuning_depression.training import evaluate
 
 
@@ -19,7 +23,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate a saved checkpoint")
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument("--data-root", type=Path, default=Path("data"))
+    parser.add_argument("--manifest-dir", type=Path, required=True)
     parser.add_argument("--split", type=str, default="dev", choices=["dev", "test"])
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--num-workers", type=int, default=TrainingConfig().num_workers)
@@ -29,8 +33,10 @@ def main() -> None:
 
     device = torch.device(args.device)
     model_config = ModelConfig()
+    contract = load_official_avec2017_contract(args.manifest_dir)
+    require_complete_official_transcript_coverage(contract, args.manifest_dir)
 
-    interviews = load_interviews(args.data_root, split=args.split)
+    interviews = load_interviews(args.manifest_dir, split=args.split, contract=contract)
     dataset = InterviewDataset(interviews)
     collator = build_collator(model_config, args.model)
     dataloader = DataLoader(

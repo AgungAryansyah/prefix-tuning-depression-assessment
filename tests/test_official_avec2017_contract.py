@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from prefix_tuning_depression.data import load_interviews
 from prefix_tuning_depression.splits import (
     CANONICAL_DAIC_WOZ_IDS,
     OfficialTranscriptCoverageError,
@@ -48,6 +49,10 @@ class OfficialAvec2017ContractTests(unittest.TestCase):
             self._write_transcript(manifest_dir / "451_TRANSCRIPT.csv", has_ellie=True)
             require_complete_official_transcript_coverage(contract, manifest_dir)
 
+            interviews = load_interviews(manifest_dir, split="train")
+
+        self.assertEqual(len(interviews), 107)
+        self.assertEqual(interviews[0].phq_score, 0)
     def _write_contract(
         self, manifest_dir: Path, session_ids: list[int]
     ):

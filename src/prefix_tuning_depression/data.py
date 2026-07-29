@@ -8,7 +8,12 @@ from pathlib import Path
 import pandas as pd
 
 from prefix_tuning_depression.preprocessing import preprocess_transcript
-from prefix_tuning_depression.splits import SplitName, load_split
+from prefix_tuning_depression.splits import (
+    OfficialDaicWozContract,
+    SplitName,
+    load_official_avec2017_contract,
+    require_complete_official_transcript_coverage,
+)
 
 
 @dataclass
@@ -25,55 +30,36 @@ class Interview:
         return len(self.qr_pairs)
 
 
-def _load_labels(labels_path: Path) -> dict[int, tuple[float, int]]:
-    """Load PHQ labels from the cleaning report."""
-    df = pd.read_csv(labels_path)
-    df = df.drop_duplicates("participant_id")
-    df = df.dropna(subset=["phq_score", "phq_binary"])
-    return {
-        int(row["participant_id"]): (float(row["phq_score"]), int(row["phq_binary"]))
-        for _, row in df.iterrows()
-    }
-
-
 def load_interviews(
-    data_root: Path | str,
+    manifest_dir: Path | str,
     split: SplitName | None = None,
-    split_map: dict[int, SplitName] | None = None,
+    contract: OfficialDaicWozContract | None = None,
 ) -> list[Interview]:
-    """Load interviews from official DAIC-WOZ transcript CSVs.
+    """Load official DAIC-WOZ interviews from an AVEC manifest directory.
 
     Args:
-        data_root: Path to the data directory containing the ``transcript/``
-            folder and ``cleaning_report_Transcript.csv``.
+        manifest_dir: Directory containing raw transcript CSVs and the four
+            validated AVEC manifest files.
         split: If provided, only return interviews from this split.
-        split_map: Optional pre-computed split mapping. If None, it is loaded
-            from the cleaning report.
+        contract: Optional preloaded official manifest contract.
 
     Returns:
         List of Interview objects.
     """
-    data_root = Path(data_root)
-    labels_path = data_root / "cleaning_report_Transcript.csv"
-
-    if split_map is None:
-        split_map = load_split(data_root, labels_path=labels_path)
-
-    labels = _load_labels(labels_path)
-
-    transcript_dir = data_root / "transcript"
+    manifest_dir = Path(manifest_dir)
+    if contract is None:
+        contract = load_official_avec2017_contract(manifest_dir)
+        require_complete_official_transcript_coverage(contract, manifest_dir)
 
     interviews: list[Interview] = []
-    for subject_id, subject_split in split_map.items():
+    for subject_id, subject_split in contract.split_map.items():
         if split is not None and subject_split != split:
             continue
 
-        csv_path = transcript_dir / f"{subject_id}_TRANSCRIPT.csv"
-        if not csv_path.exists():
-            continue
+        csv_path = manifest_dir / f"{subject_id}_TRANSCRIPT.csv"
 
         df = pd.read_csv(csv_path, sep="\t")
-        phq_score, phq_binary = labels[subject_id]
+        phq_score, phq_binary = contract.labels[subject_id]
         qr_pairs = preprocess_transcript(df, subject_id=subject_id)
 
         if not qr_pairs:

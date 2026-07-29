@@ -22,7 +22,14 @@ MODELS = [
 ]
 
 
-def run_model(model: str, seeds: list[int], output_dir: Path, device: str, num_workers: int) -> dict:
+def run_model(
+    model: str,
+    seeds: list[int],
+    manifest_dir: Path,
+    output_dir: Path,
+    device: str,
+    num_workers: int,
+) -> dict:
     """Train one model across seeds and load aggregated results."""
     print(f"\n=== Running {model} ===")
     cmd = [
@@ -30,6 +37,8 @@ def run_model(model: str, seeds: list[int], output_dir: Path, device: str, num_w
         "scripts/train.py",
         "--model",
         model,
+        "--manifest-dir",
+        str(manifest_dir),
         "--output-dir",
         str(output_dir),
         "--device",
@@ -68,6 +77,7 @@ def run_model(model: str, seeds: list[int], output_dir: Path, device: str, num_w
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run all baseline models")
+    parser.add_argument("--manifest-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, default=Path("checkpoints"))
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     parser.add_argument("--device", type=str, default="cuda" if __import__("torch").cuda.is_available() else "cpu")
@@ -77,7 +87,14 @@ def main() -> None:
 
     all_results: dict[str, dict] = {}
     for model in args.models:
-        all_results[model] = run_model(model, args.seeds, args.output_dir, args.device, args.num_workers)
+        all_results[model] = run_model(
+            model,
+            args.seeds,
+            args.manifest_dir,
+            args.output_dir,
+            args.device,
+            args.num_workers,
+        )
 
     print("\n=== Aggregated dev results ===")
     print(f"{'Model':<16} {'RMSE':>12} {'MAE':>12}")

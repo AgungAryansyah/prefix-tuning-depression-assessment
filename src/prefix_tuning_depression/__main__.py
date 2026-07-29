@@ -2,22 +2,25 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from prefix_tuning_depression.data import load_interviews, print_interview_summary
-from prefix_tuning_depression.splits import load_split, print_split_summary
+from prefix_tuning_depression.splits import (
+    load_official_avec2017_contract,
+    require_complete_official_transcript_coverage,
+)
 
 
 def main() -> None:
-    data_root = Path("data")
+    manifest_dir = "data/transcript"
+    contract = load_official_avec2017_contract(manifest_dir)
+    require_complete_official_transcript_coverage(contract, manifest_dir)
 
-    split_map = load_split(data_root)
     print("=== Split summary ===")
-    print_split_summary(split_map, data_root / "cleaning_report_Transcript.csv")
+    for split in ("train", "dev", "test"):
+        print(f"{split}: {sum(value == split for value in contract.split_map.values())}")
     print()
 
     print("=== Interview summary ===")
-    interviews = load_interviews(data_root, split_map=split_map)
+    interviews = load_interviews(manifest_dir, contract=contract)
     print_interview_summary(interviews)
 
     sample = interviews[0]

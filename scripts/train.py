@@ -16,6 +16,11 @@ from prefix_tuning_depression.data import load_interviews
 from prefix_tuning_depression.dataset import InterviewDataset, build_collator
 from prefix_tuning_depression.metrics import aggregate_run_results
 from prefix_tuning_depression.models.depression_model import build_depression_model
+from prefix_tuning_depression.splits import (
+    OfficialDaicWozContract,
+    load_official_avec2017_contract,
+    require_complete_official_transcript_coverage,
+)
 from prefix_tuning_depression.training import evaluate, train_model
 
 
@@ -32,19 +37,20 @@ def set_seed(seed: int) -> None:
 
 def run_training(
     model_type: str,
-    data_root: Path,
+    manifest_dir: Path,
     output_dir: Path,
     model_config: ModelConfig,
     training_config: TrainingConfig,
     device: torch.device,
     seed: int,
+    contract: OfficialDaicWozContract,
     device_ids: list[int] | None = None,
 ) -> dict[str, float]:
     """Train one run and return dev metrics."""
     set_seed(seed)
 
-    train_interviews = load_interviews(data_root, split="train")
-    dev_interviews = load_interviews(data_root, split="dev")
+    train_interviews = load_interviews(manifest_dir, split="train", contract=contract)
+    dev_interviews = load_interviews(manifest_dir, split="dev", contract=contract)
 
     train_dataset = InterviewDataset(train_interviews)
     dev_dataset = InterviewDataset(dev_interviews)
@@ -113,7 +119,7 @@ def main() -> None:
             "roberta-ft2",
         ],
     )
-    parser.add_argument("--data-root", type=Path, default=Path("data"))
+    parser.add_argument("--manifest-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, default=Path("checkpoints"))
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
@@ -126,6 +132,8 @@ def main() -> None:
     args = parser.parse_args()
 
     device = torch.device(args.device)
+    contract = load_official_avec2017_contract(args.manifest_dir)
+    require_complete_official_transcript_coverage(contract, args.manifest_dir)
     model_config = ModelConfig()
     training_config = TrainingConfig().replace(
         num_epochs=args.num_epochs,
@@ -139,12 +147,13 @@ def main() -> None:
         print(f"\n=== Run {args.model} with seed {seed} ===")
         run_result = run_training(
             model_type=args.model,
-            data_root=args.data_root,
+            manifest_dir=args.manifest_dir,
             output_dir=args.output_dir,
             model_config=model_config,
             training_config=training_config,
             device=device,
             seed=seed,
+            contract=contract,
             device_ids=args.device_ids,
         )
         results.append(run_result)
