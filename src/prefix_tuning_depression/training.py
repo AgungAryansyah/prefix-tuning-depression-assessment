@@ -105,6 +105,28 @@ def evaluate(
     }
 
 
+@torch.no_grad()
+def collect_predictions(
+    model: nn.Module,
+    dataloader: DataLoader,
+    device: torch.device,
+    model_type: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return labels and predictions for reproducible downstream analysis."""
+    model.eval()
+    all_predictions: list[np.ndarray] = []
+    all_labels: list[np.ndarray] = []
+
+    for batch in dataloader:
+        labels = batch["labels"].to(device)
+        interview_lengths = batch["interview_lengths"].to(device)
+        logits = _forward_batch(model, batch, interview_lengths, model_type, device)
+        all_predictions.append(np.atleast_1d(logits.view(-1).cpu().numpy()))
+        all_labels.append(np.atleast_1d(labels.cpu().numpy()))
+
+    return np.concatenate(all_labels), np.concatenate(all_predictions)
+
+
 def _forward_batch(
     model: nn.Module,
     batch: dict[str, torch.Tensor],

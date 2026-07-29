@@ -6,6 +6,7 @@ import argparse
 from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
@@ -20,7 +21,7 @@ from prefix_tuning_depression.splits import (
     load_official_avec2017_contract,
     require_complete_official_transcript_coverage,
 )
-from prefix_tuning_depression.training import evaluate
+from prefix_tuning_depression.training import collect_predictions, evaluate
 
 
 def main() -> None:
@@ -30,6 +31,7 @@ def main() -> None:
     parser.add_argument("--manifest-dir", type=Path, required=True)
     parser.add_argument("--fusion-method", choices=FUSION_METHODS, default="average")
     parser.add_argument("--split", type=str, default="dev", choices=["dev", "test"])
+    parser.add_argument("--predictions-output", type=Path)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--num-workers", type=int, default=TrainingConfig().num_workers)
     parser.add_argument("--device-ids", type=int, nargs="+", default=None,
@@ -65,6 +67,10 @@ def main() -> None:
     print(f"  Loss: {results['loss']:.4f}")
     print(f"  RMSE: {results['rmse']:.4f}")
     print(f"  MAE:  {results['mae']:.4f}")
+    if args.predictions_output is not None:
+        labels, predictions = collect_predictions(model, dataloader, device, args.model)
+        args.predictions_output.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(args.predictions_output, labels=labels, predictions=predictions)
 
 
 if __name__ == "__main__":
