@@ -13,7 +13,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from prefix_tuning_depression.config import ModelConfig, TrainingConfig
-from prefix_tuning_depression.data import load_interviews
+from prefix_tuning_depression.data import Interview, load_interviews
 from prefix_tuning_depression.dataset import InterviewDataset, build_collator
 from prefix_tuning_depression.metrics import aggregate_run_results
 from prefix_tuning_depression.models.depression_model import (
@@ -48,13 +48,17 @@ def run_training(
     device: torch.device,
     seed: int,
     contract: OfficialDaicWozContract,
+    train_interviews: list[Interview] | None = None,
+    dev_interviews: list[Interview] | None = None,
     device_ids: list[int] | None = None,
 ) -> dict[str, float]:
     """Train one run and return dev metrics."""
     set_seed(seed)
 
-    train_interviews = load_interviews(manifest_dir, split="train", contract=contract)
-    dev_interviews = load_interviews(manifest_dir, split="dev", contract=contract)
+    if train_interviews is None:
+        train_interviews = load_interviews(manifest_dir, split="train", contract=contract)
+    if dev_interviews is None:
+        dev_interviews = load_interviews(manifest_dir, split="dev", contract=contract)
 
     train_dataset = InterviewDataset(train_interviews)
     dev_dataset = InterviewDataset(dev_interviews)
