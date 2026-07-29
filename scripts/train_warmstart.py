@@ -1,8 +1,8 @@
 """Train a warm-started dual encoder model.
 
 First trains a prefix-only model, then initializes a dual encoder from it and
-continues training with the frozen prefix branch plus trainable ST projection
-and interview-level layers.
+continues training with the trainable prefix branch, ST projection, and
+interview-level layers.
 """
 
 from __future__ import annotations

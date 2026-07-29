@@ -212,9 +212,6 @@ class DualEncoderModel(BaseDepressionModel):
         self.prefix_projection.apply(init_linear_layer)
         self.st_projection.apply(init_linear_layer)
 
-        # In warm-start mode the prefix branch is frozen.
-        self.freeze_prefix = False
-
     def average_fusion(
         self, encoding_0: torch.Tensor, encoding_1: torch.Tensor
     ) -> torch.Tensor:
@@ -276,7 +273,7 @@ def build_warmstarted_dual_encoder(
     """Create a dual encoder initialized from a trained prefix-only model.
 
     The prefix encoder, prefix projection, and interview-level layers are
-    copied from the prefix checkpoint and the prefix encoder is frozen.
+    copied from the prefix checkpoint and remain trainable.
     """
     prefix_model = PrefixModel(config).to(device)
     prefix_model.load_state_dict(
@@ -291,9 +288,5 @@ def build_warmstarted_dual_encoder(
     dual_model.interview_encoder.load_state_dict(
         prefix_model.interview_encoder.state_dict()
     )
-
-    for param in dual_model.prefix_encoder.parameters():
-        param.requires_grad = False
-    dual_model.freeze_prefix = True
 
     return dual_model
