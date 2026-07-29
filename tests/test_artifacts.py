@@ -26,7 +26,11 @@ class ArtifactTests(unittest.TestCase):
             for name in names:
                 (root / name).write_text(name)
             for subject_id in (300, 301, 302):
-                (root / f"{subject_id}_TRANSCRIPT.csv").write_text(str(subject_id))
+                (root / f"{subject_id}_TRANSCRIPT.csv").write_text(
+                    "start_time\tstop_time\tspeaker\tvalue\n"
+                    "0\t1\tEllie\tquestion\n"
+                    "1\t2\tParticipant\tanswer\n"
+                )
             transcript_hash = sha256_file(root / "300_TRANSCRIPT.csv")
 
             contract = OfficialDaicWozContract(

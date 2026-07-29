@@ -57,6 +57,7 @@ def select_prefix_length(
     contract,
     device: torch.device,
     seed: int,
+    allow_incomplete_coverage: bool,
     device_ids: list[int] | None,
 ) -> int:
     """Select prefix length with one development run, as in the paper."""
@@ -74,6 +75,7 @@ def select_prefix_length(
             contract=contract,
             train_interviews=train_interviews,
             dev_interviews=dev_interviews,
+            allow_incomplete_coverage=allow_incomplete_coverage,
             device_ids=device_ids,
         )
         candidates.append((prefix_length, result))
@@ -83,6 +85,7 @@ def select_prefix_length(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the DAIC-WOZ low-data experiment")
     parser.add_argument("--manifest-dir", type=Path, required=True)
+    parser.add_argument("--allow-incomplete-coverage", action="store_true")
     parser.add_argument("--output-dir", type=Path, default=Path("low_data_results"))
     parser.add_argument("--percentages", type=int, nargs="+", default=[20, 40, 60, 80, 100])
     parser.add_argument("--prefix-lengths", type=int, nargs="+", default=[2, 4, 6, 8, 10])
@@ -99,10 +102,26 @@ def main() -> None:
 
     device = torch.device(args.device)
     contract = load_official_avec2017_contract(args.manifest_dir)
-    require_complete_official_transcript_coverage(contract, args.manifest_dir)
-    train_interviews = load_interviews(args.manifest_dir, split="train", contract=contract)
-    dev_interviews = load_interviews(args.manifest_dir, split="dev", contract=contract)
-    test_interviews = load_interviews(args.manifest_dir, split="test", contract=contract)
+    if not args.allow_incomplete_coverage:
+        require_complete_official_transcript_coverage(contract, args.manifest_dir)
+    train_interviews = load_interviews(
+        args.manifest_dir,
+        split="train",
+        contract=contract,
+        allow_incomplete_coverage=args.allow_incomplete_coverage,
+    )
+    dev_interviews = load_interviews(
+        args.manifest_dir,
+        split="dev",
+        contract=contract,
+        allow_incomplete_coverage=args.allow_incomplete_coverage,
+    )
+    test_interviews = load_interviews(
+        args.manifest_dir,
+        split="test",
+        contract=contract,
+        allow_incomplete_coverage=args.allow_incomplete_coverage,
+    )
     training_config = TrainingConfig().replace(
         num_epochs=args.num_epochs,
         es_patience=args.es_patience,
@@ -124,6 +143,7 @@ def main() -> None:
             contract,
             device,
             args.selection_seed,
+            args.allow_incomplete_coverage,
             args.device_ids,
         )
         percentage_results: dict[str, object] = {"prefix_length": prefix_length}
@@ -147,6 +167,7 @@ def main() -> None:
                     contract=contract,
                     train_interviews=subset,
                     dev_interviews=dev_interviews,
+                    allow_incomplete_coverage=args.allow_incomplete_coverage,
                     device_ids=args.device_ids,
                 )
                 runs.append({**result, "seed": seed})

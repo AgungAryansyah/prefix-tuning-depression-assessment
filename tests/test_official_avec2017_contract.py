@@ -7,6 +7,7 @@ from prefix_tuning_depression.data import load_interviews
 from prefix_tuning_depression.audit import build_reproduction_audit
 from prefix_tuning_depression.splits import (
     CANONICAL_DAIC_WOZ_IDS,
+    OfficialDaicWozContract,
     OfficialTranscriptCoverageError,
     inspect_official_transcript_coverage,
     load_official_avec2017_contract,
@@ -72,6 +73,24 @@ class OfficialAvec2017ContractTests(unittest.TestCase):
         self.assertEqual(audit["status"], "blocked")
         self.assertEqual(audit["missing_transcript_ids"], [458])
         self.assertEqual(audit["missing_ellie_ids"], [451])
+
+    def test_allow_incomplete_coverage_skips_missing_transcripts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest_dir = Path(directory)
+            contract = OfficialDaicWozContract(
+                split_map={300: "train", 301: "dev", 302: "test"},
+                labels={300: (0.0, 0), 301: (1.0, 0), 302: (2.0, 0)},
+            )
+            self._write_transcript(manifest_dir / "300_TRANSCRIPT.csv", has_ellie=True)
+
+            interviews = load_interviews(
+                manifest_dir,
+                split="train",
+                contract=contract,
+                allow_incomplete_coverage=True,
+            )
+
+        self.assertEqual([interview.subject_id for interview in interviews], [300])
     def _write_contract(
         self, manifest_dir: Path, session_ids: list[int]
     ):

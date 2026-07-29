@@ -29,6 +29,7 @@ def run_model(
     output_dir: Path,
     device: str,
     num_workers: int,
+    allow_incomplete_coverage: bool,
 ) -> dict:
     """Train one model across seeds and load aggregated results."""
     print(f"\n=== Running {model} ===")
@@ -47,6 +48,8 @@ def run_model(
         str(num_workers),
         "--seeds",
     ] + [str(s) for s in seeds]
+    if allow_incomplete_coverage:
+        cmd.append("--allow-incomplete-coverage")
 
     subprocess.run(cmd, check=True)
 
@@ -78,6 +81,7 @@ def run_model(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run all baseline models")
     parser.add_argument("--manifest-dir", type=Path, required=True)
+    parser.add_argument("--allow-incomplete-coverage", action="store_true")
     parser.add_argument("--output-dir", type=Path, default=Path("checkpoints"))
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     parser.add_argument("--device", type=str, default="cuda" if __import__("torch").cuda.is_available() else "cpu")
@@ -94,6 +98,7 @@ def main() -> None:
             args.output_dir,
             args.device,
             args.num_workers,
+            args.allow_incomplete_coverage,
         )
 
     print("\n=== Aggregated dev results ===")

@@ -34,6 +34,7 @@ def load_interviews(
     manifest_dir: Path | str,
     split: SplitName | None = None,
     contract: OfficialDaicWozContract | None = None,
+    allow_incomplete_coverage: bool = False,
 ) -> list[Interview]:
     """Load official DAIC-WOZ interviews from an AVEC manifest directory.
 
@@ -42,6 +43,8 @@ def load_interviews(
             validated AVEC manifest files.
         split: If provided, only return interviews from this split.
         contract: Optional preloaded official manifest contract.
+        allow_incomplete_coverage: Permit missing transcript files for a
+            provisional reduced-cohort experiment.
 
     Returns:
         List of Interview objects.
@@ -49,6 +52,7 @@ def load_interviews(
     manifest_dir = Path(manifest_dir)
     if contract is None:
         contract = load_official_avec2017_contract(manifest_dir)
+    if not allow_incomplete_coverage:
         require_complete_official_transcript_coverage(contract, manifest_dir)
 
     interviews: list[Interview] = []
@@ -57,6 +61,10 @@ def load_interviews(
             continue
 
         csv_path = manifest_dir / f"{subject_id}_TRANSCRIPT.csv"
+        if not csv_path.exists():
+            if allow_incomplete_coverage:
+                continue
+            raise FileNotFoundError(csv_path)
 
         df = pd.read_csv(csv_path, sep="\t")
         phq_score, phq_binary = contract.labels[subject_id]

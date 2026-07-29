@@ -40,6 +40,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate the best development checkpoint")
     parser.add_argument("--model", choices=MODEL_TYPES, required=True)
     parser.add_argument("--manifest-dir", type=Path, required=True)
+    parser.add_argument("--allow-incomplete-coverage", action="store_true")
     parser.add_argument("--checkpoint-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, default=Path("evaluation"))
     parser.add_argument("--fusion-method", choices=FUSION_METHODS, default="average")
@@ -51,13 +52,19 @@ def main() -> None:
 
     model_config = replace(ModelConfig(), fusion_method=args.fusion_method)
     contract = load_official_avec2017_contract(args.manifest_dir)
-    require_complete_official_transcript_coverage(contract, args.manifest_dir)
+    if not args.allow_incomplete_coverage:
+        require_complete_official_transcript_coverage(contract, args.manifest_dir)
     selected = select_best_checkpoint(
         args.checkpoint_dir, args.model, model_config, args.seeds
     )
 
     device = torch.device(args.device)
-    test_interviews = load_interviews(args.manifest_dir, split="test", contract=contract)
+    test_interviews = load_interviews(
+        args.manifest_dir,
+        split="test",
+        contract=contract,
+        allow_incomplete_coverage=args.allow_incomplete_coverage,
+    )
     dataloader = DataLoader(
         InterviewDataset(test_interviews),
         batch_size=2,

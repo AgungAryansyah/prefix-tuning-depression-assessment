@@ -29,6 +29,7 @@ def main() -> None:
     parser.add_argument("--model", type=str, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--manifest-dir", type=Path, required=True)
+    parser.add_argument("--allow-incomplete-coverage", action="store_true")
     parser.add_argument("--fusion-method", choices=FUSION_METHODS, default="average")
     parser.add_argument("--split", type=str, default="dev", choices=["dev", "test"])
     parser.add_argument("--predictions-output", type=Path)
@@ -41,9 +42,15 @@ def main() -> None:
     device = torch.device(args.device)
     model_config = replace(ModelConfig(), fusion_method=args.fusion_method)
     contract = load_official_avec2017_contract(args.manifest_dir)
-    require_complete_official_transcript_coverage(contract, args.manifest_dir)
+    if not args.allow_incomplete_coverage:
+        require_complete_official_transcript_coverage(contract, args.manifest_dir)
 
-    interviews = load_interviews(args.manifest_dir, split=args.split, contract=contract)
+    interviews = load_interviews(
+        args.manifest_dir,
+        split=args.split,
+        contract=contract,
+        allow_incomplete_coverage=args.allow_incomplete_coverage,
+    )
     dataset = InterviewDataset(interviews)
     collator = build_collator(model_config, args.model)
     dataloader = DataLoader(

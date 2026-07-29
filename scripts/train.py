@@ -50,15 +50,26 @@ def run_training(
     contract: OfficialDaicWozContract,
     train_interviews: list[Interview] | None = None,
     dev_interviews: list[Interview] | None = None,
+    allow_incomplete_coverage: bool = False,
     device_ids: list[int] | None = None,
 ) -> dict[str, float]:
     """Train one run and return dev metrics."""
     set_seed(seed)
 
     if train_interviews is None:
-        train_interviews = load_interviews(manifest_dir, split="train", contract=contract)
+        train_interviews = load_interviews(
+            manifest_dir,
+            split="train",
+            contract=contract,
+            allow_incomplete_coverage=allow_incomplete_coverage,
+        )
     if dev_interviews is None:
-        dev_interviews = load_interviews(manifest_dir, split="dev", contract=contract)
+        dev_interviews = load_interviews(
+            manifest_dir,
+            split="dev",
+            contract=contract,
+            allow_incomplete_coverage=allow_incomplete_coverage,
+        )
 
     train_dataset = InterviewDataset(train_interviews)
     dev_dataset = InterviewDataset(dev_interviews)
@@ -117,6 +128,7 @@ def run_training(
             train_interviews=train_interviews,
             dev_interviews=dev_interviews,
             device=str(device),
+            allow_incomplete_coverage=allow_incomplete_coverage,
         ),
     )
 
@@ -143,6 +155,11 @@ def main() -> None:
         ],
     )
     parser.add_argument("--manifest-dir", type=Path, required=True)
+    parser.add_argument(
+        "--allow-incomplete-coverage",
+        action="store_true",
+        help="Run a provisional reduced-cohort experiment despite missing official QR inputs",
+    )
     parser.add_argument("--fusion-method", choices=FUSION_METHODS, default="average")
     parser.add_argument("--output-dir", type=Path, default=Path("checkpoints"))
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
@@ -157,7 +174,8 @@ def main() -> None:
 
     device = torch.device(args.device)
     contract = load_official_avec2017_contract(args.manifest_dir)
-    require_complete_official_transcript_coverage(contract, args.manifest_dir)
+    if not args.allow_incomplete_coverage:
+        require_complete_official_transcript_coverage(contract, args.manifest_dir)
     model_config = replace(ModelConfig(), fusion_method=args.fusion_method)
     training_config = TrainingConfig().replace(
         num_epochs=args.num_epochs,
@@ -178,6 +196,7 @@ def main() -> None:
             device=device,
             seed=seed,
             contract=contract,
+            allow_incomplete_coverage=args.allow_incomplete_coverage,
             device_ids=args.device_ids,
         )
         results.append(run_result)

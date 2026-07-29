@@ -10,7 +10,10 @@ from typing import Any
 
 from prefix_tuning_depression.config import ModelConfig, TrainingConfig
 from prefix_tuning_depression.data import Interview
-from prefix_tuning_depression.splits import OfficialDaicWozContract
+from prefix_tuning_depression.splits import (
+    OfficialDaicWozContract,
+    inspect_official_transcript_coverage,
+)
 
 MANIFEST_FILES = (
     "train_split_Depression_AVEC2017.csv",
@@ -45,15 +48,22 @@ def build_run_metadata(
     train_interviews: list[Interview],
     dev_interviews: list[Interview],
     device: str,
+    allow_incomplete_coverage: bool = False,
 ) -> dict[str, Any]:
     """Build a self-contained record for one training run."""
     manifest_dir = Path(manifest_dir)
     transcript_ids = sorted(contract.split_map)
+    coverage = inspect_official_transcript_coverage(contract, manifest_dir)
     return {
         "model_type": model_type,
         "run_name": run_name(model_type, model_config),
         "seed": seed,
         "device": device,
+        "allow_incomplete_coverage": allow_incomplete_coverage,
+        "coverage": {
+            "missing_transcript_ids": sorted(coverage.missing_transcript_ids),
+            "missing_ellie_ids": sorted(coverage.missing_ellie_ids),
+        },
         "model_config": asdict(model_config),
         "training_config": asdict(training_config),
         "manifest_sha256": {
@@ -64,6 +74,7 @@ def build_run_metadata(
                 manifest_dir / f"{subject_id}_TRANSCRIPT.csv"
             )
             for subject_id in transcript_ids
+            if (manifest_dir / f"{subject_id}_TRANSCRIPT.csv").exists()
         },
         "split_subject_ids": {
             split: sorted(

@@ -44,6 +44,7 @@ def set_seed(seed: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train warm-started dual encoder")
     parser.add_argument("--manifest-dir", type=Path, required=True)
+    parser.add_argument("--allow-incomplete-coverage", action="store_true")
     parser.add_argument("--output-dir", type=Path, default=Path("checkpoints"))
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
@@ -57,7 +58,8 @@ def main() -> None:
 
     device = torch.device(args.device)
     contract = load_official_avec2017_contract(args.manifest_dir)
-    require_complete_official_transcript_coverage(contract, args.manifest_dir)
+    if not args.allow_incomplete_coverage:
+        require_complete_official_transcript_coverage(contract, args.manifest_dir)
     model_config = ModelConfig()
     training_config = TrainingConfig().replace(
         num_epochs=args.num_epochs,
@@ -72,10 +74,16 @@ def main() -> None:
         set_seed(seed)
 
         train_interviews = load_interviews(
-            args.manifest_dir, split="train", contract=contract
+            args.manifest_dir,
+            split="train",
+            contract=contract,
+            allow_incomplete_coverage=args.allow_incomplete_coverage,
         )
         dev_interviews = load_interviews(
-            args.manifest_dir, split="dev", contract=contract
+            args.manifest_dir,
+            split="dev",
+            contract=contract,
+            allow_incomplete_coverage=args.allow_incomplete_coverage,
         )
 
         train_dataset = InterviewDataset(train_interviews)
