@@ -42,7 +42,7 @@ class InterviewCollator:
             config.prefix_backbone, use_fast=True
         )
         self.st_max_len = config.st_max_token_length
-        self.prefix_max_len = config.prefix_max_token_length
+        self.prefix_max_len = config.prefix_text_max_token_length
         self.pre_seq_len = config.pre_seq_len
 
     def _encode(
@@ -147,7 +147,7 @@ def build_collator(config: ModelConfig, model_type: str):
     match model_type:
         case "prefix-only":
             return BaselineCollator(
-                config, config.prefix_backbone, config.prefix_max_token_length
+                config, config.prefix_backbone, config.prefix_text_max_token_length
             )
         case "st-only" | "dual-encoder":
             return InterviewCollator(config)

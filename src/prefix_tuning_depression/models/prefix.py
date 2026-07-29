@@ -105,12 +105,10 @@ class RobertaPrefixEncoder(nn.Module):
 def build_prefix_encoder(
     prefix_backbone: str = "roberta-base",
     pre_seq_len: int = 10,
-    dropout_prob: float = 0.1,
 ) -> RobertaPrefixEncoder:
     """Create a prefix-tuned RoBERTa encoder with the given hyperparameters."""
     config = AutoConfig.from_pretrained(prefix_backbone)
     config.pre_seq_len = pre_seq_len
-    config.hidden_dropout_prob = dropout_prob
     encoder = RobertaPrefixEncoder(config)
     # Load pretrained RoBERTa weights into the frozen backbone.
     pretrained = RobertaModel.from_pretrained(prefix_backbone, add_pooling_layer=False)

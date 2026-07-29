@@ -106,7 +106,6 @@ class PrefixModel(BaseDepressionModel):
         self.prefix_encoder = build_prefix_encoder(
             prefix_backbone=config.prefix_backbone,
             pre_seq_len=config.pre_seq_len,
-            dropout_prob=config.dropout_prob,
         )
         self.prefix_projection = nn.Linear(768, config.encoding_projection_size)
         self.prefix_projection.apply(init_linear_layer)
@@ -206,7 +205,6 @@ class DualEncoderModel(BaseDepressionModel):
         self.prefix_encoder = build_prefix_encoder(
             prefix_backbone=config.prefix_backbone,
             pre_seq_len=config.pre_seq_len,
-            dropout_prob=config.dropout_prob,
         )
         self.st_encoder = SentenceTransformerEncoder(model_id=ST_ID)
         self.prefix_projection = nn.Linear(768, config.encoding_projection_size)

@@ -20,6 +20,11 @@ class ModelConfig:
     fusion_method: str = "avg"
     chunk_size: int = 16
 
+    @property
+    def prefix_text_max_token_length(self) -> int:
+        """Return the RoBERTa token budget after reserving prefix positions."""
+        return self.prefix_max_token_length - self.pre_seq_len
+
 
 @dataclass(frozen=True)
 class TrainingConfig:
