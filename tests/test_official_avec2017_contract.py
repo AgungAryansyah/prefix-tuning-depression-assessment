@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from prefix_tuning_depression.data import load_interviews
+from prefix_tuning_depression.audit import build_reproduction_audit
 from prefix_tuning_depression.splits import (
     CANONICAL_DAIC_WOZ_IDS,
     OfficialTranscriptCoverageError,
@@ -53,6 +54,24 @@ class OfficialAvec2017ContractTests(unittest.TestCase):
 
         self.assertEqual(len(interviews), 107)
         self.assertEqual(interviews[0].phq_score, 0)
+
+    def test_audit_marks_incomplete_inputs_blocked(self) -> None:
+        session_ids = sorted(CANONICAL_DAIC_WOZ_IDS)
+
+        with tempfile.TemporaryDirectory() as directory:
+            manifest_dir = Path(directory)
+            contract = self._write_contract(manifest_dir, session_ids)
+            for subject_id in session_ids:
+                if subject_id != 458:
+                    self._write_transcript(
+                        manifest_dir / f"{subject_id}_TRANSCRIPT.csv",
+                        has_ellie=subject_id != 451,
+                    )
+            audit = build_reproduction_audit(contract, manifest_dir)
+
+        self.assertEqual(audit["status"], "blocked")
+        self.assertEqual(audit["missing_transcript_ids"], [458])
+        self.assertEqual(audit["missing_ellie_ids"], [451])
     def _write_contract(
         self, manifest_dir: Path, session_ids: list[int]
     ):
