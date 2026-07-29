@@ -76,6 +76,11 @@ class RobertaPrefixEncoder(nn.Module):
             cache.update(key, value, layer_idx)
         return cache
 
+    def train(self, mode: bool = True) -> "RobertaPrefixEncoder":
+        super().train(mode)
+        self.roberta.eval()
+        return self
+
     def forward(
         self,
         input_ids: torch.Tensor,

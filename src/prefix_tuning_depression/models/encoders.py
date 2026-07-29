@@ -37,6 +37,11 @@ class SentenceTransformerEncoder(nn.Module):
         for param in self.encoder.parameters():
             param.requires_grad = False
 
+    def train(self, mode: bool = True) -> "SentenceTransformerEncoder":
+        super().train(mode)
+        self.encoder.eval()
+        return self
+
     def forward(
         self, input_ids: torch.Tensor, attention_mask: torch.Tensor
     ) -> torch.Tensor:
@@ -68,6 +73,12 @@ class BaselineTransformerEncoder(nn.Module):
             for layer in self.encoder.encoder.layer[-unfreeze_last_n:]:
                 for param in layer.parameters():
                     param.requires_grad = True
+
+    def train(self, mode: bool = True) -> "BaselineTransformerEncoder":
+        super().train(mode)
+        if self.unfreeze_last_n == 0:
+            self.encoder.eval()
+        return self
 
     def forward(
         self, input_ids: torch.Tensor, attention_mask: torch.Tensor

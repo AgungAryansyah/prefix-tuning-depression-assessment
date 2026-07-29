@@ -4,7 +4,11 @@ from unittest.mock import patch
 from transformers import RobertaConfig, RobertaModel
 
 from prefix_tuning_depression.config import ModelConfig
-from prefix_tuning_depression.models.prefix import build_prefix_encoder
+from prefix_tuning_depression.models.prefix import (
+    RobertaPrefixEncoder,
+    build_prefix_encoder,
+    count_trainable_params,
+)
 
 
 class PrefixConfigurationTests(unittest.TestCase):
@@ -34,3 +38,20 @@ class PrefixConfigurationTests(unittest.TestCase):
             encoder = build_prefix_encoder(pre_seq_len=10)
 
         self.assertEqual(encoder.dropout.p, 0.1)
+
+    def test_trains_only_prefix_vectors(self) -> None:
+        config = RobertaConfig(
+            vocab_size=100,
+            hidden_size=32,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            intermediate_size=37,
+        )
+        config.pre_seq_len = 10
+
+        encoder = RobertaPrefixEncoder(config)
+
+        self.assertEqual(count_trainable_params(encoder), 10 * 2 * 32)
+        encoder.train()
+        self.assertFalse(encoder.roberta.training)
+        self.assertTrue(encoder.dropout.training)
