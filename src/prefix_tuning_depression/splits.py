@@ -34,12 +34,28 @@ class OfficialManifestError(ValueError):
     """Raised when the AVEC 2017 manifests do not define DAIC-WOZ exactly."""
 
 
+class OfficialTranscriptCoverageError(ValueError):
+    """Raised when official subjects cannot form the required QR inputs."""
+
+
 @dataclass(frozen=True)
 class OfficialDaicWozContract:
     """Validated AVEC 2017 split membership and PHQ-8 labels."""
 
     split_map: dict[int, SplitName]
     labels: dict[int, tuple[float, int]]
+
+
+@dataclass(frozen=True)
+class OfficialTranscriptCoverage:
+    """Raw transcript availability and Ellie-turn coverage for official subjects."""
+
+    missing_transcript_ids: frozenset[int]
+    missing_ellie_ids: frozenset[int]
+
+    @property
+    def is_complete(self) -> bool:
+        return not self.missing_transcript_ids and not self.missing_ellie_ids
 
 
 def _read_manifest(path: Path, id_column: str, label_columns: tuple[str, str] | None = None) -> tuple[set[int], dict[int, tuple[float, int]]]:
@@ -116,6 +132,52 @@ def load_official_avec2017_contract(manifest_dir: Path | str) -> OfficialDaicWoz
     return OfficialDaicWozContract(
         split_map=split_map,
         labels={**train_labels, **dev_labels, **test_labels},
+    )
+
+
+def inspect_official_transcript_coverage(
+    contract: OfficialDaicWozContract,
+    transcript_dir: Path | str,
+) -> OfficialTranscriptCoverage:
+    """Report whether every official subject can form Ellie-participant QR pairs."""
+    transcript_dir = Path(transcript_dir)
+    available_ids = {
+        int(path.stem.split("_")[0])
+        for path in transcript_dir.glob("*_TRANSCRIPT.csv")
+    }
+    expected_ids = set(contract.split_map)
+    missing_transcript_ids = expected_ids - available_ids
+    missing_ellie_ids = {
+        subject_id
+        for subject_id in expected_ids & available_ids
+        if not pd.read_csv(
+            transcript_dir / f"{subject_id}_TRANSCRIPT.csv",
+            sep="\t",
+            usecols=["speaker"],
+        )["speaker"].eq("Ellie").any()
+    }
+    return OfficialTranscriptCoverage(
+        missing_transcript_ids=frozenset(missing_transcript_ids),
+        missing_ellie_ids=frozenset(missing_ellie_ids),
+    )
+
+
+def require_complete_official_transcript_coverage(
+    contract: OfficialDaicWozContract,
+    transcript_dir: Path | str,
+) -> None:
+    """Reject a QR-only reproduction with incomplete official transcript coverage."""
+    coverage = inspect_official_transcript_coverage(contract, transcript_dir)
+    if coverage.is_complete:
+        return
+
+    issues = []
+    if coverage.missing_transcript_ids:
+        issues.append(f"missing transcripts {sorted(coverage.missing_transcript_ids)}")
+    if coverage.missing_ellie_ids:
+        issues.append(f"missing Ellie turns {sorted(coverage.missing_ellie_ids)}")
+    raise OfficialTranscriptCoverageError(
+        "Official QR coverage is incomplete: " + "; ".join(issues)
     )
 
 
