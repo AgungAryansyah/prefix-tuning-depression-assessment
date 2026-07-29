@@ -1,4 +1,4 @@
-"""DAIC-WOZ transcript preprocessing — exact reproduction of Lau et al. (2023).
+"""DAIC-WOZ transcript preprocessing aligned with Lau et al. (2023).
 
 Processes raw official DAIC-WOZ transcripts (tab-separated:
 ``start_time | stop_time | speaker | value``) into question-response
@@ -35,6 +35,7 @@ _START_PROMPTS = re.compile(
     r"i'm not a therapist|"
     r"i'll ask a few questions|"
     r"i was created to talk",
+    flags=re.IGNORECASE,
 )
 _CLOSING_PROMPTS = re.compile(
     r"okay i think i have asked everything i need to|"
@@ -42,6 +43,15 @@ _CLOSING_PROMPTS = re.compile(
     r"goodbye|"
     r"it was great chatting with you|"
     r"thanks for sharing your thoughts",
+    flags=re.IGNORECASE,
+)
+_LAUGHTER = re.compile(
+    r"<laughter>|\[laughter\]|\(\(laughter\)\)|\{hlaughteri\}",
+    re.IGNORECASE,
+)
+_SIGH = re.compile(
+    r"<sigh>|\[sigh\]|\(\(sigh\)\)|\{hsighi\}",
+    re.IGNORECASE,
 )
 
 
@@ -79,9 +89,8 @@ def _remove_annotations(df: pd.DataFrame) -> None:
         df[df["value"].str.contains(sync_expr, na=False)].index,
         inplace=True,
     )
-    df["value"] = df["value"].str.replace("<laughter>", "*laughter*", regex=False)
-    df["value"] = df["value"].str.replace(r"\[laughter\]", "*laughter*", regex=True)
-    df["value"] = df["value"].str.replace("<sigh>", "*sigh*", regex=False)
+    df["value"] = df["value"].str.replace(_LAUGHTER, "*laughter*", regex=True)
+    df["value"] = df["value"].str.replace(_SIGH, "*sigh*", regex=True)
     df["value"] = df["value"].str.replace(r"<.*?>", "", regex=True)
     df["value"] = df["value"].str.replace(r"\[.*?\]", "", regex=True)
     df["value"] = df["value"].str.replace("scrubbed_entry", "", regex=False)
@@ -91,8 +100,6 @@ def _remove_annotations(df: pd.DataFrame) -> None:
 
 def _remove_empty_rows(df: pd.DataFrame) -> None:
     df.drop(df[df["value"] == ""].index, inplace=True)
-    df.drop(df[df["value"] == "laughter"].index, inplace=True)
-    df.drop(df[df["value"] == "*laughter*"].index, inplace=True)
     df.reset_index(drop=True, inplace=True)
 
 
@@ -116,29 +123,17 @@ def _collapse_responses(df: pd.DataFrame) -> None:
 
 
 def _to_qr_pairs(df: pd.DataFrame) -> list[str]:
-    """Pair each Participant response with the preceding Ellie question.
-
-    Returns a list of concatenated QR-pair strings.
-    """
-    df = df.reset_index(drop=True)
-
-    participant_idx = df[df["speaker"] == "Participant"].index.tolist()
-    if not participant_idx:
-        return []
-
-    ellie_idx = df[df["speaker"] == "Ellie"].index.tolist()
-    if not ellie_idx:
-        return []
-
-    # Drop Participant rows that appear before the first Ellie utterance.
-    first_ellie = ellie_idx[0]
-    participant_idx = [i for i in participant_idx if i > first_ellie]
-
+    """Return only adjacent Ellie-question and Participant-response pairs."""
     pairs: list[str] = []
-    for p_idx in participant_idx:
-        q_text = df.at[p_idx - 1, "value"]
-        r_text = df.at[p_idx, "value"]
-        pairs.append(f"{q_text} {r_text}")
+    previous_speaker: str | None = None
+    previous_value: str | None = None
+    for speaker, value in zip(
+        df["speaker"].tolist(), df["value"].tolist(), strict=True
+    ):
+        if speaker == "Participant" and previous_speaker == "Ellie":
+            pairs.append(f"{previous_value} {value}")
+        previous_speaker = speaker
+        previous_value = value
     return pairs
 
 
@@ -187,13 +182,19 @@ def preprocess_transcript(
     _remove_empty_rows(df)
     _collapse_responses(df)
 
-    # Drop start / closing prompts.
+    # Routine prompts belong to Ellie; participant mentions must remain data.
     df.drop(
-        df[df["value"].str.contains(_START_PROMPTS, regex=True, na=False)].index,
+        df[
+            (df["speaker"] == "Ellie")
+            & df["value"].str.contains(_START_PROMPTS, na=False)
+        ].index,
         inplace=True,
     )
     df.drop(
-        df[df["value"].str.contains(_CLOSING_PROMPTS, regex=True, na=False)].index,
+        df[
+            (df["speaker"] == "Ellie")
+            & df["value"].str.contains(_CLOSING_PROMPTS, na=False)
+        ].index,
         inplace=True,
     )
 
