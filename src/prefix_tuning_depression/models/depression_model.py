@@ -18,16 +18,48 @@ from prefix_tuning_depression.models.initialization import init_linear_layer
 from prefix_tuning_depression.models.interview import InterviewEncoder
 from prefix_tuning_depression.models.prefix import build_prefix_encoder
 
+FUSION_METHODS = ("addition", "average", "concatenation")
+_FUSION_ALIASES = {"add": "addition", "avg": "average", "concat": "concatenation"}
+
+
+def normalize_fusion_method(method: str) -> str:
+    """Return a supported QR-embedding fusion method."""
+    method = _FUSION_ALIASES.get(method, method)
+    if method not in FUSION_METHODS:
+        raise ValueError(f"Unknown fusion method: {method}")
+    return method
+
+
+def fusion_output_size(method: str, embedding_size: int) -> int:
+    """Return the QR embedding size after fusion."""
+    return embedding_size * 2 if normalize_fusion_method(method) == "concatenation" else embedding_size
+
+
+def fuse_qr_embeddings(
+    method: str,
+    first: torch.Tensor,
+    second: torch.Tensor,
+) -> torch.Tensor:
+    """Fuse projected prefix and sentence-transformer QR embeddings."""
+    match normalize_fusion_method(method):
+        case "addition":
+            return first + second
+        case "average":
+            return (first + second) / 2
+        case "concatenation":
+            return torch.cat((first, second), dim=-1)
+    raise AssertionError("unreachable")
+
 
 class BaseDepressionModel(nn.Module):
     """Shared interview-level processing pipeline."""
 
-    def __init__(self, config: ModelConfig):
+    def __init__(self, config: ModelConfig, interview_input_size: int | None = None):
         super().__init__()
         self.config = config
         self.dropout = nn.Dropout(config.dropout_prob)
         self.interview_encoder = InterviewEncoder(
-            input_size=config.encoding_projection_size,
+            input_size=interview_input_size or config.encoding_projection_size,
             hidden_size=config.lstm_hidden_size,
             num_layers=config.lstm_num_layers,
             dropout=config.dropout_prob,
@@ -198,10 +230,16 @@ class BaselineModel(BaseDepressionModel):
 
 
 class DualEncoderModel(BaseDepressionModel):
-    """Average fusion of prefix-tuned and Sentence Transformer embeddings."""
+    """Fusion of prefix-tuned and Sentence Transformer embeddings."""
 
     def __init__(self, config: ModelConfig):
-        super().__init__(config)
+        self.fusion_method = normalize_fusion_method(config.fusion_method)
+        super().__init__(
+            config,
+            interview_input_size=fusion_output_size(
+                self.fusion_method, config.encoding_projection_size
+            ),
+        )
         self.prefix_encoder = build_prefix_encoder(
             prefix_backbone=config.prefix_backbone,
             pre_seq_len=config.pre_seq_len,
@@ -212,18 +250,13 @@ class DualEncoderModel(BaseDepressionModel):
         self.prefix_projection.apply(init_linear_layer)
         self.st_projection.apply(init_linear_layer)
 
-    def average_fusion(
-        self, encoding_0: torch.Tensor, encoding_1: torch.Tensor
-    ) -> torch.Tensor:
-        return (encoding_0 + encoding_1) / 2
-
     def forward(
         self,
         st_inputs: torch.Tensor,
         prefix_inputs: torch.Tensor,
         interview_lengths: torch.Tensor,
     ) -> torch.Tensor:
-        """Forward pass with average fusion.
+        """Forward pass with configured QR-embedding fusion.
 
         Args:
             st_inputs: Tensor of shape (batch, max_len, 2, st_max_token_len).
@@ -246,7 +279,9 @@ class DualEncoderModel(BaseDepressionModel):
         prefix_encodings = self.dropout(prefix_encodings)
         prefix_encodings = self.prefix_projection(prefix_encodings)
 
-        encoder_outputs = self.average_fusion(st_encodings, prefix_encodings)
+        encoder_outputs = fuse_qr_embeddings(
+            self.fusion_method, st_encodings, prefix_encodings
+        )
         return self._encode_qr_sequence(encoder_outputs, interview_lengths)
 
 
@@ -275,6 +310,9 @@ def build_warmstarted_dual_encoder(
     The prefix encoder, prefix projection, and interview-level layers are
     copied from the prefix checkpoint and remain trainable.
     """
+    if normalize_fusion_method(config.fusion_method) != "average":
+        raise ValueError("Warm-start dual encoder requires average fusion")
+
     prefix_model = PrefixModel(config).to(device)
     prefix_model.load_state_dict(
         torch.load(prefix_checkpoint_path, map_location=device, weights_only=True)

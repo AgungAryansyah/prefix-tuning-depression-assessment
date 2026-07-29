@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -15,7 +16,10 @@ from prefix_tuning_depression.config import ModelConfig, TrainingConfig
 from prefix_tuning_depression.data import load_interviews
 from prefix_tuning_depression.dataset import InterviewDataset, build_collator
 from prefix_tuning_depression.metrics import aggregate_run_results
-from prefix_tuning_depression.models.depression_model import build_depression_model
+from prefix_tuning_depression.models.depression_model import (
+    FUSION_METHODS,
+    build_depression_model,
+)
 from prefix_tuning_depression.splits import (
     OfficialDaicWozContract,
     load_official_avec2017_contract,
@@ -91,9 +95,14 @@ def run_training(
 
     # Save checkpoint and history.
     output_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = output_dir / f"{model_type}_seed{seed}.pt"
+    run_name = (
+        f"{model_type}_{model_config.fusion_method}"
+        if model_type == "dual-encoder"
+        else model_type
+    )
+    checkpoint_path = output_dir / f"{run_name}_seed{seed}.pt"
     torch.save(model.state_dict(), checkpoint_path)
-    history_path = output_dir / f"{model_type}_seed{seed}_history.json"
+    history_path = output_dir / f"{run_name}_seed{seed}_history.json"
     with open(history_path, "w") as f:
         json.dump(history, f, indent=2)
 
@@ -120,6 +129,7 @@ def main() -> None:
         ],
     )
     parser.add_argument("--manifest-dir", type=Path, required=True)
+    parser.add_argument("--fusion-method", choices=FUSION_METHODS, default="average")
     parser.add_argument("--output-dir", type=Path, default=Path("checkpoints"))
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
@@ -134,7 +144,7 @@ def main() -> None:
     device = torch.device(args.device)
     contract = load_official_avec2017_contract(args.manifest_dir)
     require_complete_official_transcript_coverage(contract, args.manifest_dir)
-    model_config = ModelConfig()
+    model_config = replace(ModelConfig(), fusion_method=args.fusion_method)
     training_config = TrainingConfig().replace(
         num_epochs=args.num_epochs,
         es_patience=args.es_patience,

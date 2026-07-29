@@ -17,7 +17,7 @@ class ModelConfig:
     lstm_num_layers: int = 1
     dropout_prob: float = 0.5
     num_labels: int = 1
-    fusion_method: str = "avg"
+    fusion_method: str = "average"
     chunk_size: int = 16
 
     @property
