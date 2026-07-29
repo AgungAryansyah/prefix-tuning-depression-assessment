@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import random
 from dataclasses import replace
 from pathlib import Path
@@ -12,6 +11,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
+from prefix_tuning_depression.artifacts import build_run_metadata, run_name, write_json
 from prefix_tuning_depression.config import ModelConfig, TrainingConfig
 from prefix_tuning_depression.data import Interview, load_interviews
 from prefix_tuning_depression.dataset import InterviewDataset, build_collator
@@ -99,16 +99,26 @@ def run_training(
 
     # Save checkpoint and history.
     output_dir.mkdir(parents=True, exist_ok=True)
-    run_name = (
-        f"{model_type}_{model_config.fusion_method}"
-        if model_type == "dual-encoder"
-        else model_type
-    )
-    checkpoint_path = output_dir / f"{run_name}_seed{seed}.pt"
+    artifact_name = run_name(model_type, model_config)
+    checkpoint_path = output_dir / f"{artifact_name}_seed{seed}.pt"
     torch.save(model.state_dict(), checkpoint_path)
-    history_path = output_dir / f"{run_name}_seed{seed}_history.json"
-    with open(history_path, "w") as f:
-        json.dump(history, f, indent=2)
+    history_path = output_dir / f"{artifact_name}_seed{seed}_history.json"
+    write_json(history_path, history)
+    metadata_path = output_dir / f"{artifact_name}_seed{seed}_metadata.json"
+    write_json(
+        metadata_path,
+        build_run_metadata(
+            manifest_dir=manifest_dir,
+            contract=contract,
+            model_type=model_type,
+            model_config=model_config,
+            training_config=training_config,
+            seed=seed,
+            train_interviews=train_interviews,
+            dev_interviews=dev_interviews,
+            device=str(device),
+        ),
+    )
 
     print(f"Seed {seed}: RMSE={dev_results['rmse']:.3f}, MAE={dev_results['mae']:.3f}")
     return dev_results
