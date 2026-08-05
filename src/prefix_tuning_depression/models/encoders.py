@@ -14,6 +14,7 @@ from transformers import AutoModel
 
 
 BERT_ID = "bert-base-uncased"
+E5_ID = "intfloat/e5-base-v2"
 ROBERTA_ID = "roberta-base"
 ST_ID = "sentence-transformers/all-mpnet-base-v2"
 
@@ -51,7 +52,7 @@ class SentenceTransformerEncoder(nn.Module):
 
 
 class BaselineTransformerEncoder(nn.Module):
-    """Frozen or partially-fine-tuned BERT/RoBERTa encoder.
+    """Frozen or partially-fine-tuned transformer encoder.
 
     Args:
         model_id: HuggingFace model identifier.
@@ -59,10 +60,16 @@ class BaselineTransformerEncoder(nn.Module):
             0 means fully frozen (PT); 1 means FT1; 2 means FT2.
     """
 
-    def __init__(self, model_id: str, unfreeze_last_n: int = 0):
+    def __init__(
+        self,
+        model_id: str,
+        unfreeze_last_n: int = 0,
+        normalize_output: bool = False,
+    ):
         super().__init__()
         self.encoder = AutoModel.from_pretrained(model_id)
         self.unfreeze_last_n = unfreeze_last_n
+        self.normalize_output = normalize_output
 
         # Freeze everything first.
         for param in self.encoder.parameters():
@@ -84,7 +91,10 @@ class BaselineTransformerEncoder(nn.Module):
         self, input_ids: torch.Tensor, attention_mask: torch.Tensor
     ) -> torch.Tensor:
         outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-        return _mean_pooling(outputs.last_hidden_state, attention_mask)
+        embeddings = _mean_pooling(outputs.last_hidden_state, attention_mask)
+        if self.normalize_output:
+            return F.normalize(embeddings, p=2, dim=1)
+        return embeddings
 
 
 def build_encoder(encoder_type: str) -> nn.Module:
@@ -92,7 +102,7 @@ def build_encoder(encoder_type: str) -> nn.Module:
 
     Supported types:
         - "st": SentenceTransformerEncoder (frozen all-mpnet-base-v2)
-        - "bert-pt": BERT frozen
+        - "bert-pt": frozen E5
         - "bert-ft1": BERT last layer trainable
         - "bert-ft2": BERT last two layers trainable
         - "roberta-pt": RoBERTa frozen
@@ -103,7 +113,9 @@ def build_encoder(encoder_type: str) -> nn.Module:
         case "st":
             return SentenceTransformerEncoder()
         case "bert-pt":
-            return BaselineTransformerEncoder(BERT_ID, unfreeze_last_n=0)
+            return BaselineTransformerEncoder(
+                E5_ID, unfreeze_last_n=0, normalize_output=True
+            )
         case "bert-ft1":
             return BaselineTransformerEncoder(BERT_ID, unfreeze_last_n=1)
         case "bert-ft2":

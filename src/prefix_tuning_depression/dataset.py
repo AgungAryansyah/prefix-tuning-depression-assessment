@@ -8,6 +8,7 @@ from transformers import AutoTokenizer
 
 from prefix_tuning_depression.config import ModelConfig
 from prefix_tuning_depression.data import Interview
+from prefix_tuning_depression.models.encoders import E5_ID
 
 
 def _qr_pairs_from_sample(sample: dict[str, object]) -> list[str]:
@@ -101,9 +102,16 @@ class InterviewCollator:
 class BaselineCollator:
     """Collator for single-encoder baseline models."""
 
-    def __init__(self, config: ModelConfig, tokenizer_name: str, max_len: int):
+    def __init__(
+        self,
+        config: ModelConfig,
+        tokenizer_name: str,
+        max_len: int,
+        text_prefix: str = "",
+    ):
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         self.max_len = max_len
+        self.text_prefix = text_prefix
 
     def _encode(
         self, qr_pairs: list[str], tokenizer: AutoTokenizer, max_len: int
@@ -127,6 +135,8 @@ class BaselineCollator:
         inputs = torch.zeros(batch_size, max_len, 2, self.max_len, dtype=torch.long)
         for sample_idx, sample in enumerate(batch):
             qr_pairs = _qr_pairs_from_sample(sample)
+            if self.text_prefix:
+                qr_pairs = [self.text_prefix + pair for pair in qr_pairs]
             inputs[sample_idx, : len(qr_pairs)] = self._encode(
                 qr_pairs, self.tokenizer, self.max_len
             )
@@ -151,7 +161,11 @@ def build_collator(config: ModelConfig, model_type: str):
             )
         case "st-only" | "dual-encoder":
             return InterviewCollator(config)
-        case "bert-pt" | "bert-ft1" | "bert-ft2":
+        case "bert-pt":
+            return BaselineCollator(
+                config, E5_ID, config.prefix_max_token_length, text_prefix="query: "
+            )
+        case "bert-ft1" | "bert-ft2":
             return BaselineCollator(
                 config, "bert-base-uncased", config.prefix_max_token_length
             )
