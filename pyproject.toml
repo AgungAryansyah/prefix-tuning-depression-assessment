@@ -10,8 +10,10 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "torch>=2.3",
-    "transformers>=4.45",
+    "transformers>=4.45,<5",
     "peft>=0.13",
+    "sentencepiece>=0.2",
+    "protobuf>=5",
     "pandas>=2.2",
     "numpy>=2.0",
     "scipy>=1.11",
