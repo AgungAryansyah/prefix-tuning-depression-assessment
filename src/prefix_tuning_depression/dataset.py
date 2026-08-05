@@ -40,7 +40,7 @@ class InterviewCollator:
     def __init__(self, config: ModelConfig):
         self.st_tokenizer = AutoTokenizer.from_pretrained(config.transformer_pretrained_id)
         self.prefix_tokenizer = AutoTokenizer.from_pretrained(
-            config.prefix_backbone, use_fast=True
+            config.prefix_backbone, use_fast=False
         )
         self.st_max_len = config.st_max_token_length
         self.prefix_max_len = config.prefix_text_max_token_length
@@ -108,8 +108,14 @@ class BaselineCollator:
         tokenizer_name: str,
         max_len: int,
         text_prefix: str = "",
+        use_fast: bool | None = None,
     ):
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        if use_fast is None:
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        else:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                tokenizer_name, use_fast=use_fast
+            )
         self.max_len = max_len
         self.text_prefix = text_prefix
 
@@ -157,7 +163,10 @@ def build_collator(config: ModelConfig, model_type: str):
     match model_type:
         case "prefix-only":
             return BaselineCollator(
-                config, config.prefix_backbone, config.prefix_text_max_token_length
+                config,
+                config.prefix_backbone,
+                config.prefix_text_max_token_length,
+                use_fast=False,
             )
         case "st-only" | "dual-encoder":
             return InterviewCollator(config)

@@ -52,6 +52,16 @@ class DatasetCollatorTests(unittest.TestCase):
         from_pretrained.assert_called_once_with("bert-base-uncased")
         self.assertEqual(tokenizer.inputs, [["question answer"]])
 
+    @patch("prefix_tuning_depression.dataset.AutoTokenizer.from_pretrained")
+    def test_prefix_only_uses_the_slow_deberta_tokenizer(self, from_pretrained) -> None:
+        from_pretrained.return_value = _Tokenizer()
+
+        build_collator(ModelConfig(), "prefix-only")
+
+        from_pretrained.assert_called_once_with(
+            "microsoft/deberta-v3-base", use_fast=False
+        )
+
     def _sample(self) -> dict[str, object]:
         return {
             "text_input": ["question answer"],
