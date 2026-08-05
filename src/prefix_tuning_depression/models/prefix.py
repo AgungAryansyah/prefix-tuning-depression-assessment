@@ -15,6 +15,9 @@ class DebertaDoraEncoder(nn.Module):
         super().__init__()
         for param in backbone.parameters():
             param.requires_grad = False
+        backbone.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
         self.encoder = get_peft_model(
             backbone,
             LoraConfig(

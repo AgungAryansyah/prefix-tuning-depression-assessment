@@ -45,6 +45,21 @@ class DoraConfigurationTests(unittest.TestCase):
 
         self.assertEqual(embeddings.shape, (1, 32))
 
+    def test_gradient_checkpointing_keeps_dora_gradients(self) -> None:
+        encoder = DebertaDoraEncoder(self._backbone())
+        encoder.train()
+
+        encoder(torch.tensor([[1, 2]]), torch.tensor([[1, 1]])).sum().backward()
+
+        self.assertTrue(encoder.encoder.get_base_model().is_gradient_checkpointing)
+        self.assertTrue(
+            any(
+                parameter.grad is not None
+                for name, parameter in encoder.named_parameters()
+                if "lora_" in name
+            )
+        )
+
     def test_keeps_the_existing_factory_signature(self) -> None:
         backbone = self._backbone()
         with patch(
