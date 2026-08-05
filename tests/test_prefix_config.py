@@ -1,57 +1,68 @@
 import unittest
 from unittest.mock import patch
 
-from transformers import RobertaConfig, RobertaModel
+import torch
+from transformers import DebertaV2Config, DebertaV2Model
 
 from prefix_tuning_depression.config import ModelConfig
 from prefix_tuning_depression.models.prefix import (
-    RobertaPrefixEncoder,
+    DebertaDoraEncoder,
     build_prefix_encoder,
     count_trainable_params,
 )
 
 
-class PrefixConfigurationTests(unittest.TestCase):
-    def test_reserves_prefix_positions_from_the_roberta_token_budget(self) -> None:
-        config = ModelConfig()
+class DoraConfigurationTests(unittest.TestCase):
+    def test_uses_the_full_token_budget(self) -> None:
+        self.assertEqual(ModelConfig().prefix_text_max_token_length, 128)
 
-        self.assertEqual(config.prefix_text_max_token_length, 118)
+    def test_builds_a_query_value_dora_adapter(self) -> None:
+        encoder = DebertaDoraEncoder(self._backbone())
+        config = encoder.encoder.peft_config["default"]
 
-    def test_keeps_roberta_internal_dropout_at_its_pretrained_value(self) -> None:
-        config = RobertaConfig(
-            vocab_size=100,
-            hidden_size=32,
-            num_hidden_layers=1,
-            num_attention_heads=4,
-            intermediate_size=37,
-            hidden_dropout_prob=0.1,
+        self.assertTrue(config.use_dora)
+        self.assertEqual(config.target_modules, {"query_proj", "value_proj"})
+        self.assertEqual(config.r, 8)
+        self.assertEqual(config.lora_alpha, 16)
+        self.assertEqual(config.lora_dropout, 0.1)
+        self.assertGreater(count_trainable_params(encoder), 0)
+        self.assertTrue(
+            all(
+                not parameter.requires_grad
+                for name, parameter in encoder.named_parameters()
+                if "lora_" not in name and "lora_magnitude_vector" not in name
+            )
         )
-        pretrained = RobertaModel(config, add_pooling_layer=False)
 
+    def test_returns_masked_mean_embeddings(self) -> None:
+        encoder = DebertaDoraEncoder(self._backbone())
+        encoder.eval()
+
+        embeddings = encoder(
+            torch.tensor([[1, 2, 0, 0]]),
+            torch.tensor([[1, 1, 0, 0]]),
+        )
+
+        self.assertEqual(embeddings.shape, (1, 32))
+
+    def test_keeps_the_existing_factory_signature(self) -> None:
+        backbone = self._backbone()
         with patch(
-            "prefix_tuning_depression.models.prefix.AutoConfig.from_pretrained",
-            return_value=config,
-        ), patch(
-            "prefix_tuning_depression.models.prefix.RobertaModel.from_pretrained",
-            return_value=pretrained,
-        ):
-            encoder = build_prefix_encoder(pre_seq_len=10)
+            "prefix_tuning_depression.models.prefix.AutoModel.from_pretrained",
+            return_value=backbone,
+        ) as from_pretrained:
+            encoder = build_prefix_encoder("test-backbone", pre_seq_len=10)
 
-        self.assertEqual(encoder.dropout.p, 0.1)
+        from_pretrained.assert_called_once_with("test-backbone")
+        self.assertIsInstance(encoder, DebertaDoraEncoder)
 
-    def test_trains_only_prefix_vectors(self) -> None:
-        config = RobertaConfig(
-            vocab_size=100,
-            hidden_size=32,
-            num_hidden_layers=1,
-            num_attention_heads=4,
-            intermediate_size=37,
+    def _backbone(self) -> DebertaV2Model:
+        return DebertaV2Model(
+            DebertaV2Config(
+                vocab_size=100,
+                hidden_size=32,
+                num_hidden_layers=1,
+                num_attention_heads=4,
+                intermediate_size=64,
+            )
         )
-        config.pre_seq_len = 10
-
-        encoder = RobertaPrefixEncoder(config)
-
-        self.assertEqual(count_trainable_params(encoder), 10 * 2 * 32)
-        encoder.train()
-        self.assertFalse(encoder.roberta.training)
-        self.assertTrue(encoder.dropout.training)

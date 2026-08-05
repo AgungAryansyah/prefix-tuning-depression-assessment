@@ -8,7 +8,7 @@ class ModelConfig:
     """Model architecture hyperparameters."""
 
     transformer_pretrained_id: str = "sentence-transformers/all-mpnet-base-v2"
-    prefix_backbone: str = "roberta-base"
+    prefix_backbone: str = "microsoft/deberta-v3-base"
     pre_seq_len: int = 10
     st_max_token_length: int = 256
     prefix_max_token_length: int = 128
@@ -22,8 +22,8 @@ class ModelConfig:
 
     @property
     def prefix_text_max_token_length(self) -> int:
-        """Return the RoBERTa token budget after reserving prefix positions."""
-        return self.prefix_max_token_length - self.pre_seq_len
+        """Return the full text token budget for the adapted encoder."""
+        return self.prefix_max_token_length
 
 
 @dataclass(frozen=True)
